@@ -1,11 +1,10 @@
 # Plaza
 
 Party-games launchpad for the crew. Mobile-first hub + isolated game modules.
-See [`context/`](./context) for the full spec — it's the source of truth.
 
 ## Stack
 
-Next.js (App Router) + TS + Tailwind + Supabase (Postgres + Realtime + anon auth) + Drizzle ORM + Vercel. See [CLAUDE.md](./CLAUDE.md) and [`context/project-overview.md`](./context/project-overview.md) for the locked decisions.
+Next.js (App Router) + TS + Tailwind + Supabase (Postgres + Realtime + anon auth) + Drizzle ORM + Vercel.
 
 ## Setup
 

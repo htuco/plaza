@@ -15,6 +15,10 @@
 /.claude
 /.venv
 
+# internal spec / scratch docs (kept local only)
+/context
+/CLAUDE.md
+
 # testing
 /coverage
 
