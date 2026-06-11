@@ -6,7 +6,7 @@ export function PreferencesSwitcher() {
   const { theme, language, setTheme, setLanguage, t } = usePreferences();
 
   return (
-    <div className="fixed right-3 top-3 z-50 flex flex-wrap justify-end gap-2 text-xs">
+    <div className="plaza-preferences flex flex-wrap justify-end gap-2 text-xs">
       <SegmentedControl
         label={t("prefs.theme")}
         value={theme}
@@ -41,10 +41,7 @@ function SegmentedControl({
   onChange: (value: string) => void;
 }) {
   return (
-    <div
-      aria-label={label}
-      className="plaza-card flex h-9 items-center rounded-lg p-0.5 shadow-sm"
-    >
+    <div aria-label={label} className="plaza-segmented-control flex items-center p-1">
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -53,10 +50,10 @@ function SegmentedControl({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(option.value)}
-            className={`h-8 rounded-md px-2.5 font-medium transition-colors ${
+            className={`plaza-segmented-control__option ${
               active
-                ? "bg-[var(--foreground)] text-[var(--plaza-canvas)]"
-                : "text-[var(--plaza-muted)] hover:bg-[var(--plaza-surface-2)] hover:text-[var(--foreground)]"
+                ? "plaza-segmented-control__option--active"
+                : "plaza-segmented-control__option--idle"
             }`}
             title={label}
           >

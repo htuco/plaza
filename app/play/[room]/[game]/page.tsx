@@ -30,8 +30,8 @@ export default async function GamePage({
 
   return (
     <div className="plaza-page flex flex-1 flex-col">
-      <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-8">
-        <GameRoomHeader gameId={gameId} roomCode={room.code} />
+      <main className="mx-auto w-full max-w-3xl flex-1 px-5 pb-8 pt-14 sm:pt-8">
+        <GameRoomHeader gameId={gameId} roomCode={room.code} isHost={me.isHost} />
         <Client roomCode={room.code} playerId={me.id} />
       </main>
     </div>

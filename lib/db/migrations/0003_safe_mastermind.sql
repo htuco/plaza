@@ -1,0 +1,1 @@
+ALTER TYPE "public"."game_id" ADD VALUE 'alias';

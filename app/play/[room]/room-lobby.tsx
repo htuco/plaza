@@ -3,6 +3,9 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { GameDetails } from "@/components/game-details";
+import { GAME_ICONS } from "@/components/game-icons";
+import { LeaveRoomButton } from "@/components/leave-room-button";
+import { RoomCode } from "@/components/room-code";
 import { usePreferences } from "@/components/preferences-provider";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
@@ -35,6 +38,10 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // Host can change live (host transfer on leave) — track it from broadcasts.
+  const myId = me?.id ?? null;
+  const [isHost, setIsHost] = useState(me?.isHost ?? false);
+
   // If we land here while a game is already in progress, route straight in.
   useEffect(() => {
     if (room.status === "finished") {
@@ -54,7 +61,13 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
           players?: PlayerRow[];
           gameId?: GameId | null;
         };
-        if (p.players) setPlayers(p.players);
+        if (p.players) {
+          setPlayers(p.players);
+          if (myId) {
+            const mine = p.players.find((player) => player.id === myId);
+            if (mine) setIsHost(mine.isHost);
+          }
+        }
         if (p.gameId !== undefined) setSelectedGame(p.gameId);
       }
       if (event.type === "state") {
@@ -71,9 +84,7 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [room.code, router]);
-
-  const isHost = me?.isHost ?? false;
+  }, [room.code, router, myId]);
 
   function pickGame(gameId: GameId) {
     if (!isHost) return;
@@ -115,35 +126,62 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
 
   return (
     <div className="plaza-page flex flex-1 flex-col">
-      <main className="mx-auto w-full max-w-xl flex-1 px-5 py-8">
-        <header className="mb-6">
+      <main className="mx-auto w-full max-w-2xl flex-1 px-5 pb-10 pt-14 sm:pt-8">
+        <header className="mb-6 grid justify-items-center gap-3 text-center">
           <p className="plaza-label">{t("lobby.roomCode")}</p>
-          <h1 className="font-mono text-4xl font-semibold tracking-widest">{room.code}</h1>
-          {me && (
-            <p className="plaza-muted mt-1 text-sm">
-              {t("lobby.playingAs")} <span className="font-medium">{me.nickname}</span>
-              {isHost && ` (${t("lobby.host")})`}
-            </p>
-          )}
+          <RoomCode code={room.code} />
+          <p className="plaza-muted-2 text-xs">{t("lobby.shareCode")}</p>
+          <div className="flex items-center gap-2">
+            {me && (
+              <p className="plaza-muted text-sm">
+                {t("lobby.playingAs")} <span className="font-medium">{me.nickname}</span>
+                {isHost && (
+                  <span className="plaza-status-review ml-1.5 rounded-full px-2 py-0.5 text-xs font-medium">
+                    {t("lobby.host")}
+                  </span>
+                )}
+              </p>
+            )}
+            {me && <LeaveRoomButton roomCode={room.code} isHost={isHost} />}
+          </div>
         </header>
 
-        <section className="plaza-panel mb-6 rounded-lg p-4">
-          <h2 className="plaza-label mb-2">{t("lobby.players", players.length)}</h2>
-          <ul className="flex flex-wrap gap-2">
-            {players.map((p) => (
-              <li
-                key={p.id}
-                className="plaza-chip rounded-full px-3 py-1 text-sm"
-              >
-                {p.nickname}
-                {p.isHost && <span className="plaza-muted-2 ml-1 text-xs">{t("lobby.host")}</span>}
-              </li>
-            ))}
-          </ul>
+        <section className="plaza-panel mb-5 rounded-xl p-4" aria-labelledby="players-heading">
+          <h2 id="players-heading" className="plaza-label mb-3">
+            {t("lobby.players", players.length)}
+          </h2>
+          {players.length === 0 ? (
+            <p className="plaza-muted text-sm">{t("lobby.waitingForPlayers")}</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {players.map((p) => (
+                <li key={p.id}>
+                  <span
+                    className={`plaza-player-pill ${p.isHost ? "plaza-player-pill--host" : ""} ${
+                      p.id === myId ? "plaza-player-pill--me" : ""
+                    }`}
+                  >
+                    <span className="plaza-player-pill__avatar" aria-hidden="true">
+                      {p.isHost ? "★" : p.nickname.slice(0, 1)}
+                    </span>
+                    <span className="max-w-32 truncate font-medium">{p.nickname}</span>
+                    {p.id === myId && (
+                      <span className="plaza-muted-2 text-xs">{t("gradovi.you")}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {players.length === 1 && (
+            <p className="plaza-muted-2 mt-3 text-xs">{t("lobby.waitingForPlayers")}</p>
+          )}
         </section>
 
-        <section className="plaza-panel rounded-lg p-4">
-          <h2 className="plaza-label mb-3">{t("lobby.pickGame")}</h2>
+        <section className="plaza-panel rounded-xl p-4" aria-labelledby="pick-game-heading">
+          <h2 id="pick-game-heading" className="plaza-label mb-3">
+            {t("lobby.pickGame")}
+          </h2>
           <ul className="grid gap-2 sm:grid-cols-2">
             {GAMES.map((game) => {
               const selected = selectedGame === game.id;
@@ -151,26 +189,43 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
               const copy = gameCopy(game.id);
               const expanded = expandedGame === game.id;
               return (
-                <li key={game.id} className="plaza-card overflow-hidden rounded-lg">
+                <li
+                  key={game.id}
+                  className={`plaza-game-tile overflow-hidden rounded-xl ${
+                    selected ? "plaza-game-tile--selected" : ""
+                  } ${soon ? "opacity-70" : ""}`}
+                >
                   <button
                     type="button"
                     aria-expanded={expanded}
+                    aria-pressed={selected}
                     onClick={() => handleGameClick(game.id)}
-                    className={`w-full p-3 text-left transition-colors ${
-                      selected
-                        ? "bg-[var(--plaza-accent-soft)] text-[var(--foreground)]"
-                        : "hover:bg-[var(--plaza-surface-2)]"
-                    }`}
+                    className="w-full p-3 text-left"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium">{copy.displayName}</div>
-                      {soon && (
-                        <span className="plaza-status-review rounded px-2 py-1 text-xs font-medium">
-                          {t("game.soon")}
-                        </span>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <span className="plaza-game-tile__icon shrink-0" aria-hidden="true">
+                        {GAME_ICONS[game.id]}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-semibold">{copy.displayName}</span>
+                          {soon && (
+                            <span className="plaza-status-review shrink-0 rounded-full px-2 py-0.5 text-xs font-medium">
+                              {t("game.soon")}
+                            </span>
+                          )}
+                          {selected && !soon && (
+                            <span className="plaza-status-valid shrink-0 rounded-full px-2 py-0.5 text-xs font-medium">
+                              ✓
+                            </span>
+                          )}
+                        </div>
+                        <div className="plaza-muted truncate text-xs">{copy.tagline}</div>
+                        <div className="plaza-muted-2 mt-0.5 text-xs">
+                          {t("home.players", game.minPlayers, game.maxPlayers)}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-xs opacity-80">{copy.tagline}</div>
                   </button>
                   {expanded && <GameDetails gameId={game.id} />}
                 </li>
@@ -179,14 +234,15 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
           </ul>
 
           {isHost ? (
-            <div className="mt-4 flex flex-col gap-2">
+            <div className="mt-5 grid gap-2">
+              <p className="plaza-label">{t("lobby.hostControls")}</p>
               <button
                 type="button"
                 disabled={!canStart || isPending}
                 onClick={startGame}
-                className="plaza-button h-11 rounded-lg text-sm font-medium disabled:opacity-50"
+                className="plaza-button h-12 rounded-xl text-base font-semibold disabled:opacity-50"
               >
-                {isPending ? "..." : t("lobby.startGame")}
+                {isPending ? "…" : t("lobby.startGame")}
               </button>
               {!canStart && selectedGame && selectedMeta && (
                 <p className="plaza-muted text-xs">
@@ -195,19 +251,20 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
                     : t("lobby.needPlayers", selectedMeta.minPlayers)}
                 </p>
               )}
-              {!selectedGame && (
-                <p className="plaza-muted text-xs">{t("lobby.pickGameFirst")}</p>
-              )}
+              {!selectedGame && <p className="plaza-muted text-xs">{t("lobby.pickGameFirst")}</p>}
             </div>
           ) : (
-            <p className="plaza-muted mt-3 text-xs">
-              {t("lobby.waitingForHostGame")}
-            </p>
+            <div className="plaza-subtle mt-5 rounded-xl px-4 py-3">
+              <p className="plaza-muted text-sm">{t("lobby.waitingForHostGame")}</p>
+              {selectedMeta && (
+                <p className="mt-1 text-sm font-medium">
+                  {t("lobby.selectedGame")}: {gameCopy(selectedMeta.id).displayName}
+                </p>
+              )}
+            </div>
           )}
 
-          {error && (
-            <p className="mt-3 text-sm text-[var(--plaza-danger)]">{error}</p>
-          )}
+          {error && <p className="mt-3 text-sm text-[var(--plaza-danger)]">{error}</p>}
         </section>
       </main>
     </div>
