@@ -29,6 +29,15 @@ type RoomRow = {
   players: PlayerRow[];
 };
 
+// Per-game accent tones, shared with the landing catalog cards.
+const GAME_TILE_TONES: Record<GameId, string> = {
+  imposteri: "plaza-game-card--mask",
+  alias: "plaza-game-card--voice",
+  "gradovi-i-sela": "plaza-game-card--paper",
+  asocijacije: "plaza-game-card--puzzle",
+  "guess-the-song": "plaza-game-card--music",
+};
+
 export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null }) {
   const router = useRouter();
   const { gameCopy, localizeError, t } = usePreferences();
@@ -126,27 +135,34 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
 
   return (
     <div className="plaza-page flex flex-1 flex-col">
-      <main className="mx-auto w-full max-w-2xl flex-1 px-5 pb-10 pt-14 sm:pt-8">
-        <header className="mb-6 grid justify-items-center gap-3 text-center">
+      <header className="plaza-room-topbar sticky top-0 z-40">
+        <div className="mx-auto flex h-14 w-full max-w-2xl items-center justify-between gap-3 px-5">
+          <span className="plaza-wordmark text-lg">Plaza</span>
+          <div className="flex items-center gap-2">
+            {me && (
+              <span className="plaza-muted hidden max-w-40 truncate text-sm sm:inline">
+                {me.nickname}
+              </span>
+            )}
+            {isHost && <span className="plaza-host-chip">★ {t("lobby.host")}</span>}
+            {me && <LeaveRoomButton roomCode={room.code} isHost={isHost} />}
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-2xl flex-1 px-5 pb-10 pt-8">
+        <section className="mb-6 grid justify-items-center gap-3 text-center">
           <p className="plaza-label">{t("lobby.roomCode")}</p>
           <RoomCode code={room.code} />
           <p className="plaza-muted-2 text-xs">{t("lobby.shareCode")}</p>
-          <div className="flex items-center gap-2">
-            {me && (
-              <p className="plaza-muted text-sm">
-                {t("lobby.playingAs")} <span className="font-medium">{me.nickname}</span>
-                {isHost && (
-                  <span className="plaza-status-review ml-1.5 rounded-full px-2 py-0.5 text-xs font-medium">
-                    {t("lobby.host")}
-                  </span>
-                )}
-              </p>
-            )}
-            {me && <LeaveRoomButton roomCode={room.code} isHost={isHost} />}
-          </div>
-        </header>
+          {me && (
+            <p className="plaza-muted text-sm">
+              {t("lobby.playingAs")} <span className="font-semibold">{me.nickname}</span>
+            </p>
+          )}
+        </section>
 
-        <section className="plaza-panel mb-5 rounded-xl p-4" aria-labelledby="players-heading">
+        <section className="plaza-panel mb-5 p-4" aria-labelledby="players-heading">
           <h2 id="players-heading" className="plaza-label mb-3">
             {t("lobby.players", players.length)}
           </h2>
@@ -154,12 +170,13 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
             <p className="plaza-muted text-sm">{t("lobby.waitingForPlayers")}</p>
           ) : (
             <ul className="flex flex-wrap gap-2">
-              {players.map((p) => (
+              {players.map((p, index) => (
                 <li key={p.id}>
                   <span
                     className={`plaza-player-pill ${p.isHost ? "plaza-player-pill--host" : ""} ${
                       p.id === myId ? "plaza-player-pill--me" : ""
                     }`}
+                    style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <span className="plaza-player-pill__avatar" aria-hidden="true">
                       {p.isHost ? "★" : p.nickname.slice(0, 1)}
@@ -171,14 +188,19 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
                   </span>
                 </li>
               ))}
+              {players.length === 1 && (
+                <li>
+                  <span className="plaza-seat-ghost">
+                    <span className="plaza-seat-ghost__avatar" aria-hidden="true" />
+                    <span className="text-xs">{t("lobby.waitingForPlayers")}</span>
+                  </span>
+                </li>
+              )}
             </ul>
-          )}
-          {players.length === 1 && (
-            <p className="plaza-muted-2 mt-3 text-xs">{t("lobby.waitingForPlayers")}</p>
           )}
         </section>
 
-        <section className="plaza-panel rounded-xl p-4" aria-labelledby="pick-game-heading">
+        <section className="plaza-panel p-4" aria-labelledby="pick-game-heading">
           <h2 id="pick-game-heading" className="plaza-label mb-3">
             {t("lobby.pickGame")}
           </h2>
@@ -191,7 +213,7 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
               return (
                 <li
                   key={game.id}
-                  className={`plaza-game-tile overflow-hidden rounded-xl ${
+                  className={`plaza-game-tile ${GAME_TILE_TONES[game.id]} overflow-hidden rounded-xl ${
                     selected ? "plaza-game-tile--selected" : ""
                   } ${soon ? "opacity-70" : ""}`}
                 >
@@ -240,7 +262,7 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
                 type="button"
                 disabled={!canStart || isPending}
                 onClick={startGame}
-                className="plaza-button h-12 rounded-xl text-base font-semibold disabled:opacity-50"
+                className="plaza-button h-14 rounded-xl text-base font-extrabold disabled:opacity-50"
               >
                 {isPending ? "…" : t("lobby.startGame")}
               </button>
@@ -254,17 +276,27 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
               {!selectedGame && <p className="plaza-muted text-xs">{t("lobby.pickGameFirst")}</p>}
             </div>
           ) : (
-            <div className="plaza-subtle mt-5 rounded-xl px-4 py-3">
-              <p className="plaza-muted text-sm">{t("lobby.waitingForHostGame")}</p>
-              {selectedMeta && (
-                <p className="mt-1 text-sm font-medium">
-                  {t("lobby.selectedGame")}: {gameCopy(selectedMeta.id).displayName}
-                </p>
-              )}
+            <div className="plaza-subtle mt-5 flex items-center gap-3 rounded-xl px-4 py-3.5">
+              <span
+                className="plaza-game-tile__icon shrink-0 animate-pulse"
+                aria-hidden="true"
+              >
+                {selectedMeta ? GAME_ICONS[selectedMeta.id] : "🕯️"}
+              </span>
+              <div className="min-w-0">
+                <p className="plaza-muted text-sm">{t("lobby.waitingForHostGame")}</p>
+                {selectedMeta && (
+                  <p className="mt-0.5 truncate text-sm font-semibold">
+                    {t("lobby.selectedGame")}: {gameCopy(selectedMeta.id).displayName}
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
-          {error && <p className="mt-3 text-sm text-[var(--plaza-danger)]">{error}</p>}
+          {error && (
+            <p className="plaza-error mt-3 rounded-lg px-3 py-2 text-sm font-medium">{error}</p>
+          )}
         </section>
       </main>
     </div>

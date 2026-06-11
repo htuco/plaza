@@ -17,6 +17,7 @@ export function PreferenceScript() {
       ? storedLanguage
       : (firstLanguage.toLowerCase().startsWith("bs") ? "bs" : "en");
     document.documentElement.lang = language;
+    document.documentElement.dataset.language = language;
   } catch {}
 })();
 `;

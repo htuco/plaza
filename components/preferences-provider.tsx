@@ -41,6 +41,20 @@ const translations: Record<LanguagePreference, Record<string, TranslationEntry>>
     "home.joinRoom": "Join a room",
     "home.games": "Games",
     "home.footer": "built for the crew",
+    "preview.eyebrow": "Live game table",
+    "preview.featured": "Featured",
+    "preview.atTable": "At the table",
+    "preview.roomCode": "Room code",
+    "preview.copyHint": "Share to invite",
+    "preview.host": "host",
+    "preview.more": (count) => `+${count}`,
+    "preview.activity.created": "Hamza opened a room",
+    "preview.activity.joined": "Ajdin joined",
+    "preview.activity.picked": "Alias selected",
+    "preview.moreGames": "More on the table",
+    "preview.alias.tagline": "Explain the word — just never say it.",
+    "preview.alias.meta": "4–16 players · 60s rounds",
+    "preview.status.ready": "Ready",
     "form.nickname": "Player name",
     "form.nicknamePlaceholder": "Player name",
     "form.roomCode": "Room code",
@@ -300,6 +314,20 @@ const translations: Record<LanguagePreference, Record<string, TranslationEntry>>
     "home.joinRoom": "Uđi u sobu",
     "home.games": "Igre",
     "home.footer": "napravljeno za raju",
+    "preview.eyebrow": "Sto uživo",
+    "preview.featured": "Izdvojeno",
+    "preview.atTable": "Za stolom",
+    "preview.roomCode": "Kod sobe",
+    "preview.copyHint": "Podijeli i pozovi",
+    "preview.host": "domaćin",
+    "preview.more": (count) => `+${count}`,
+    "preview.activity.created": "Hamza napravio sobu",
+    "preview.activity.joined": "Ajdin se pridružio",
+    "preview.activity.picked": "Alias izabran",
+    "preview.moreGames": "Još na stolu",
+    "preview.alias.tagline": "Objasni riječ — ali ne smiješ je izgovoriti.",
+    "preview.alias.meta": "4–16 igrača · 60s runde",
+    "preview.status.ready": "Spremno",
     "form.nickname": "Ime igrača",
     "form.nicknamePlaceholder": "Ime igrača",
     "form.roomCode": "Kod sobe",
@@ -888,11 +916,12 @@ function emitPreferences() {
 }
 
 function setPreferenceSnapshot(next: PreferencesSnapshot, persist: boolean) {
-  if (sameSnapshot(currentSnapshot, next)) return;
+  const same = sameSnapshot(currentSnapshot, next);
   currentSnapshot = next;
 
   if (typeof document !== "undefined") {
     document.documentElement.dataset.theme = next.theme;
+    document.documentElement.dataset.language = next.language;
     document.documentElement.lang = next.language;
   }
 
@@ -901,6 +930,7 @@ function setPreferenceSnapshot(next: PreferencesSnapshot, persist: boolean) {
     window.localStorage.setItem(LANGUAGE_KEY, next.language);
   }
 
+  if (same) return;
   emitPreferences();
 }
 

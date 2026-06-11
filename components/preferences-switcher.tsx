@@ -41,7 +41,11 @@ function SegmentedControl({
   onChange: (value: string) => void;
 }) {
   return (
-    <div aria-label={label} className="plaza-segmented-control flex items-center p-1">
+    <div
+      role="group"
+      aria-label={label}
+      className="plaza-segmented-control flex items-center p-1"
+    >
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -50,12 +54,12 @@ function SegmentedControl({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(option.value)}
+            title={`${label}: ${option.label}`}
             className={`plaza-segmented-control__option ${
               active
                 ? "plaza-segmented-control__option--active"
                 : "plaza-segmented-control__option--idle"
             }`}
-            title={label}
           >
             {option.label}
           </button>
