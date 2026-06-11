@@ -47,12 +47,12 @@ export const GAMES: readonly GameMeta[] = [
     availability: "playable",
   },
   {
-    id: "asocijacije",
-    displayName: "Asocijacije",
-    tagline: "Crack the four columns and the final solution.",
-    minPlayers: 2,
-    maxPlayers: 12,
-    availability: "soon",
+    id: "alias",
+    displayName: "Alias",
+    tagline: "Explain the word — just never say it.",
+    minPlayers: 4,
+    maxPlayers: 16,
+    availability: "playable",
   },
   {
     id: "gradovi-i-sela",
@@ -63,12 +63,20 @@ export const GAMES: readonly GameMeta[] = [
     availability: "playable",
   },
   {
+    id: "asocijacije",
+    displayName: "Asocijacije",
+    tagline: "Crack the four columns and the final solution.",
+    minPlayers: 2,
+    maxPlayers: 12,
+    availability: "playable",
+  },
+  {
     id: "guess-the-song",
     displayName: "Guess the Song",
     tagline: "Name the track before anyone else.",
     minPlayers: 2,
     maxPlayers: 12,
-    availability: "soon",
+    availability: "playable",
   },
 ] as const;
 

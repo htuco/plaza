@@ -15,6 +15,7 @@ export const GAME_IDS = [
   "asocijacije",
   "gradovi-i-sela",
   "guess-the-song",
+  "alias",
 ] as const;
 export type GameId = (typeof GAME_IDS)[number];
 
