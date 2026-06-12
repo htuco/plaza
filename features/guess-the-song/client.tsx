@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
 import { createClient } from "@/lib/supabase/client";
@@ -31,6 +31,35 @@ type SongSnapshot = {
   view: GuessTheSongView;
   updatedAt: string;
 };
+
+// Deterministic pseudo-random bar settings so SSR and client agree; the
+// staggered durations keep the wave from ever looping in sync.
+const EQ_BARS = Array.from({ length: 16 }, (_, index) => ({
+  dur: 620 + ((index * 97) % 460),
+  delay: (index * 53) % 380,
+  min: 0.14 + ((index * 31) % 22) / 100,
+  max: 0.55 + ((index * 47) % 45) / 100,
+}));
+
+function Equalizer({ active }: { active: boolean }) {
+  return (
+    <div className="plaza-eq mt-3" data-active={active} aria-hidden="true">
+      {EQ_BARS.map((bar, index) => (
+        <span
+          key={index}
+          style={
+            {
+              "--eq-dur": `${bar.dur}ms`,
+              "--eq-delay": `${bar.delay}ms`,
+              "--eq-min": bar.min,
+              "--eq-max": bar.max,
+            } as CSSProperties
+          }
+        />
+      ))}
+    </div>
+  );
+}
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -459,6 +488,7 @@ export function GuessTheSongClient({
                   </span>
                 )}
               </div>
+              <Equalizer active={view.phase === "playing"} />
               {previewUrl && (
                 <audio
                   ref={audioRef}

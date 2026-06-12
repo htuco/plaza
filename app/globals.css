@@ -126,7 +126,7 @@ h2,
 h3,
 .plaza-display {
   font-family: var(--font-display, var(--font-geist-sans)), var(--font-geist-sans), sans-serif;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 ::selection {
@@ -482,7 +482,7 @@ h3,
   font-size: clamp(2.85rem, 9.5vw, 5.9rem);
   font-weight: 800;
   line-height: 0.95;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: #fdf4e3;
   text-shadow: 0 4px 38px rgb(0 0 0 / 0.55);
   text-wrap: balance;
@@ -1509,6 +1509,123 @@ h3,
   color: var(--plaza-muted-2);
 }
 
+/* ------------------------------------------------------------- share room */
+
+.plaza-share-trigger {
+  border: 1px solid var(--plaza-line);
+  background: var(--plaza-surface);
+  color: var(--foreground);
+  box-shadow: var(--plaza-shadow-soft);
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease,
+    transform 140ms ease, box-shadow 140ms ease;
+}
+
+.plaza-share-trigger:hover {
+  border-color: var(--plaza-accent);
+  color: var(--plaza-accent);
+  transform: translateY(-1px);
+}
+
+.plaza-share-trigger:active {
+  transform: translateY(0);
+}
+
+.plaza-share-trigger svg {
+  flex: none;
+}
+
+/* Primary action — accent-tinted fill so Share reads as the main button. */
+.plaza-share-trigger--primary {
+  background: linear-gradient(
+    180deg,
+    var(--plaza-accent-2) 0%,
+    var(--plaza-accent) 100%
+  );
+  border-color: var(--plaza-accent);
+  color: var(--plaza-accent-ink);
+}
+
+.plaza-share-trigger--primary:hover {
+  background: linear-gradient(180deg, var(--plaza-accent) 0%, var(--plaza-accent-hover) 100%);
+  border-color: var(--plaza-accent-hover);
+  color: var(--plaza-accent-ink);
+}
+
+.plaza-share-overlay {
+  background: color-mix(in srgb, #1a1208 62%, transparent);
+  backdrop-filter: blur(3px);
+  animation: plaza-share-fade 160ms ease;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+
+.plaza-share-sheet {
+  border: 1px solid var(--plaza-line);
+  border-radius: 1.4rem 1.4rem 0 0;
+  background: var(--plaza-surface);
+  box-shadow: var(--plaza-shadow);
+  animation: plaza-share-rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (min-width: 640px) {
+  .plaza-share-sheet {
+    border-radius: 1.4rem;
+    animation: plaza-share-pop 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}
+
+.plaza-share-close {
+  color: var(--plaza-muted-2);
+  transition: color 120ms ease;
+}
+
+.plaza-share-close:hover {
+  color: var(--foreground);
+}
+
+.plaza-share-qr {
+  background: #f3e4cb;
+  border: 1px solid var(--plaza-line);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.plaza-share-link {
+  border: 1px solid var(--plaza-line);
+  background: var(--plaza-surface-2);
+  color: var(--plaza-muted);
+}
+
+.plaza-share-copy {
+  background: var(--plaza-surface);
+  border: 1px solid var(--plaza-line);
+  color: var(--foreground);
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.plaza-share-copy:hover {
+  border-color: var(--plaza-accent);
+  color: var(--plaza-accent);
+}
+
+@keyframes plaza-share-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes plaza-share-rise {
+  from {
+    transform: translateY(14%);
+    opacity: 0;
+  }
+}
+
+@keyframes plaza-share-pop {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+}
+
 /* ------------------------------------------------------------- player pills */
 
 .plaza-player-pill {
@@ -1652,10 +1769,24 @@ h3,
 
 /* ------------------------------------------------------------- ranking rows */
 
+/* Ranking rows read as paper score slips: faint ruled lines, a pressed top
+   edge, and a slight lift on hover. */
 .plaza-rank-row {
   border: 1px solid var(--plaza-line);
-  background: var(--plaza-surface);
+  background:
+    repeating-linear-gradient(
+      transparent 0 1.1rem,
+      color-mix(in srgb, var(--plaza-line) 30%, transparent) 1.1rem calc(1.1rem + 1px)
+    ),
+    var(--plaza-surface);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 9%, transparent),
+    0 2px 0 color-mix(in srgb, var(--plaza-line) 50%, transparent);
   transition: transform 140ms ease;
+}
+
+.plaza-rank-row:hover {
+  transform: translateY(-1px);
 }
 
 .plaza-rank-row--me {
@@ -1858,6 +1989,319 @@ h3,
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent);
 }
 
+.plaza-alias-play {
+  min-height: auto;
+}
+
+.plaza-alias-play-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.plaza-alias-play-head .plaza-alias-timer {
+  justify-content: flex-end;
+}
+
+.plaza-alias-score-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.plaza-alias-points {
+  background: var(--plaza-accent-soft);
+  color: var(--plaza-accent);
+}
+
+.plaza-alias-card-stack {
+  position: relative;
+  width: min(100%, 21.5rem);
+  height: clamp(17.5rem, 39svh, 25rem);
+  margin-inline: auto;
+  touch-action: pan-y;
+  user-select: none;
+  perspective: 1100px;
+}
+
+.plaza-alias-word-card,
+.plaza-alias-card-back {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 1.55rem;
+  transform-origin: 50% 90%;
+}
+
+.plaza-alias-word-card {
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid rgb(116 72 37 / 0.38);
+  background:
+    radial-gradient(18rem 12rem at 50% 18%, rgb(255 221 168 / 0.54), transparent 70%),
+    radial-gradient(rgb(91 49 22 / 0.06) 1px, transparent 1px),
+    linear-gradient(160deg, #fff3dc, #f4c891 48%, #e89a58);
+  background-size: auto, 18px 18px, auto;
+  box-shadow:
+    0 26px 70px rgb(0 0 0 / 0.42),
+    0 6px 0 rgb(89 48 23 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.72);
+  color: #321d0d;
+  padding: clamp(1.1rem, 4vw, 1.6rem);
+}
+
+.plaza-alias-word-card--active {
+  animation: plaza-alias-card-enter 260ms cubic-bezier(0.18, 0.88, 0.28, 1.1);
+}
+
+.plaza-alias-word-card--exiting-correct {
+  pointer-events: none;
+  animation: plaza-alias-card-correct var(--alias-exit-ms, 340ms) cubic-bezier(0.2, 0.82, 0.28, 1) forwards;
+}
+
+.plaza-alias-word-card--exiting-skip {
+  pointer-events: none;
+  animation: plaza-alias-card-skip var(--alias-exit-ms, 340ms) cubic-bezier(0.2, 0.82, 0.28, 1) forwards;
+}
+
+.plaza-alias-card-chip,
+.plaza-alias-card-meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.85rem;
+  border-radius: 999px;
+  background: rgb(60 31 12 / 0.1);
+  padding: 0.35rem 0.75rem;
+  color: rgb(50 29 13 / 0.72);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plaza-alias-word-card__body {
+  display: grid;
+  place-items: center;
+  gap: 1rem;
+  min-height: 68%;
+  text-align: center;
+}
+
+.plaza-alias-word-card__word {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
+  font-size: clamp(2.25rem, 10vw, 4rem);
+  font-weight: 900;
+  line-height: 0.92;
+}
+
+.plaza-alias-word-card__warning {
+  border-radius: 999px;
+  background: rgb(50 29 13 / 0.12);
+  padding: 0.5rem 0.85rem;
+  color: rgb(50 29 13 / 0.78);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plaza-alias-card-back {
+  border: 1px solid color-mix(in srgb, var(--plaza-accent) 38%, var(--plaza-line));
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--plaza-accent) 26%, transparent), transparent 38%),
+    repeating-linear-gradient(135deg, rgb(248 235 214 / 0.08) 0 8px, transparent 8px 16px),
+    linear-gradient(150deg, #3a2110, #201208 55%, #130b05);
+  box-shadow:
+    0 20px 52px rgb(0 0 0 / 0.34),
+    inset 0 1px 0 rgb(255 244 226 / 0.14);
+}
+
+.plaza-alias-card-back::before {
+  content: "plaza";
+  position: absolute;
+  inset: 1rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(248 235 214 / 0.14);
+  border-radius: 1.05rem;
+  color: rgb(248 235 214 / 0.18);
+  font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
+  font-size: clamp(2.5rem, 12vw, 4.5rem);
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.plaza-alias-card-back--0 {
+  z-index: 3;
+  transform: translate3d(0.45rem, 0.5rem, -10px) rotate(2.5deg) scale(0.97);
+}
+
+.plaza-alias-card-back--1 {
+  z-index: 2;
+  transform: translate3d(-0.32rem, 0.82rem, -24px) rotate(-3deg) scale(0.94);
+}
+
+.plaza-alias-card-back--2 {
+  z-index: 1;
+  transform: translate3d(0.08rem, 1.14rem, -42px) rotate(4deg) scale(0.9);
+  opacity: 0.66;
+}
+
+.plaza-alias-card-back--front {
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 1.4rem;
+}
+
+.plaza-alias-card-back--front::before {
+  opacity: 0.45;
+}
+
+.plaza-alias-card-back__content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  max-width: 18rem;
+  text-align: center;
+}
+
+.plaza-alias-card-back__title {
+  color: #fff4df;
+  font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
+  font-size: clamp(1.75rem, 7vw, 2.8rem);
+  font-weight: 900;
+  line-height: 0.95;
+}
+
+.plaza-alias-card-back__note {
+  color: rgb(248 235 214 / 0.72);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.plaza-alias-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+
+.plaza-alias-review-pile {
+  min-height: 11rem;
+  border: 1px dashed var(--plaza-line-strong);
+  border-radius: 1.25rem;
+  background:
+    radial-gradient(
+      14rem 8rem at 50% 0,
+      color-mix(in srgb, var(--pile-color, var(--plaza-accent)) 14%, transparent),
+      transparent 74%
+    ),
+    color-mix(in srgb, var(--plaza-surface-2) 72%, transparent);
+  padding: 0.9rem;
+}
+
+.plaza-alias-review-pile--correct {
+  --pile-color: var(--plaza-success);
+}
+
+.plaza-alias-review-pile--skipped {
+  --pile-color: var(--plaza-review);
+}
+
+.plaza-alias-review-card {
+  display: flex;
+  width: 100%;
+  min-height: 3.2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  border: 1px solid var(--plaza-line);
+  border-radius: 0.85rem;
+  background: linear-gradient(160deg, #fff3dc, #f1c88f);
+  color: #321d0d;
+  padding: 0.65rem 0.8rem;
+  text-align: left;
+  rotate: var(--pile-rot, 0deg);
+  box-shadow: 0 10px 22px rgb(0 0 0 / 0.18);
+  transition: translate 140ms ease, rotate 140ms ease, box-shadow 140ms ease;
+}
+
+.plaza-alias-review-card:not(:disabled):hover {
+  translate: 0 -2px;
+  rotate: 0deg;
+  box-shadow: 0 14px 28px rgb(0 0 0 / 0.22);
+}
+
+.plaza-alias-review-card--correct {
+  border-color: color-mix(in srgb, var(--plaza-success) 45%, var(--plaza-line));
+}
+
+.plaza-alias-review-card--skipped {
+  border-color: color-mix(in srgb, var(--plaza-review) 45%, var(--plaza-line));
+  background: linear-gradient(160deg, #f3e5cd, #ddbd8c);
+}
+
+@keyframes plaza-alias-card-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(1.3rem, 1.4rem, -60px) rotate(4deg) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+@keyframes plaza-alias-card-correct {
+  to {
+    opacity: 0;
+    transform: translate3d(42vw, -9rem, 0) rotate(18deg) scale(0.96);
+    filter: saturate(1.2) drop-shadow(0 0 24px color-mix(in srgb, var(--plaza-success) 45%, transparent));
+  }
+}
+
+@keyframes plaza-alias-card-skip {
+  to {
+    opacity: 0;
+    transform: translate3d(-42vw, 7rem, 0) rotate(-18deg) scale(0.96);
+    filter: saturate(0.8) drop-shadow(0 0 22px color-mix(in srgb, var(--plaza-review) 42%, transparent));
+  }
+}
+
+@media (min-width: 820px) {
+  .plaza-alias-play-head {
+    grid-template-columns: 1fr auto 1fr;
+  }
+
+  .plaza-alias-score-strip {
+    grid-column: auto;
+    justify-content: flex-end;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plaza-alias-word-card--active,
+  .plaza-alias-word-card--exiting-correct,
+  .plaza-alias-word-card--exiting-skip {
+    animation: none;
+  }
+
+  .plaza-alias-word-card--exiting-correct,
+  .plaza-alias-word-card--exiting-skip {
+    opacity: 0;
+  }
+}
+
 /* ------------------------------------------------------------- asocijacije */
 
 .plaza-asoc-column {
@@ -2045,22 +2489,49 @@ h3,
 /* ------------------------------------------------------------- gradovi */
 
 .plaza-letter-hero {
+  position: relative;
   display: grid;
   place-items: center;
   width: clamp(3.6rem, 17vw, 4.7rem);
   height: clamp(3.6rem, 17vw, 4.7rem);
-  border-radius: 1.05rem;
-  border: 1px solid color-mix(in srgb, var(--plaza-accent) 50%, transparent);
-  background: linear-gradient(165deg, var(--plaza-accent-2), var(--plaza-accent));
-  color: var(--plaza-accent-ink);
+  border-radius: 0.85rem;
+  border: 1px solid rgb(96 66 30 / 0.6);
+  background:
+    radial-gradient(2.4rem 2.4rem at 50% 18%, rgb(255 245 220 / 0.5), transparent 70%),
+    linear-gradient(150deg, #e9cf9d, #cda86a);
+  color: #4a3014;
   font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
   font-size: clamp(1.9rem, 9.5vw, 2.6rem);
   font-weight: 800;
   transform: rotate(-2deg);
   box-shadow:
-    inset 0 2px 0 rgb(255 255 255 / 0.32),
-    0 4px 0 color-mix(in srgb, var(--plaza-accent-hover) 80%, black 10%),
-    var(--plaza-glow);
+    inset 0 2px 0 rgb(255 245 220 / 0.7),
+    inset 0 -4px 0 rgb(96 66 30 / 0.4),
+    0 5px 0 rgb(96 66 30 / 0.45),
+    0 14px 28px rgb(0 0 0 / 0.3);
+  animation: plaza-letter-drop 480ms cubic-bezier(0.2, 0.85, 0.3, 1.15) backwards;
+}
+
+/* Tile point value in the corner, scrabble-style. */
+.plaza-letter-hero::after {
+  content: "10";
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.3rem;
+  font-size: 0.58rem;
+  font-weight: 800;
+  opacity: 0.55;
+}
+
+@keyframes plaza-letter-drop {
+  from {
+    opacity: 0;
+    transform: rotate(6deg) translateY(-1.4rem) scale(1.25);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-2deg) translateY(0) scale(1);
+  }
 }
 
 .plaza-sticky-actions {
@@ -2281,7 +2752,7 @@ body.plaza-time-warning::before {
   font-size: clamp(2.15rem, 8vw, 4.3rem);
   font-weight: 800;
   line-height: 1;
-  letter-spacing: -0.015em;
+  letter-spacing: 0;
 }
 
 .plaza-screen-note {
@@ -2463,7 +2934,7 @@ body.plaza-time-warning::before {
   font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
   font-size: clamp(2.1rem, 8vw, 3.3rem);
   font-weight: 800;
-  letter-spacing: -0.015em;
+  letter-spacing: 0;
   line-height: 1;
   text-transform: lowercase;
 }
@@ -2484,6 +2955,7 @@ body.plaza-time-warning::before {
 }
 
 .plaza-word-card__divider {
+  display: block;
   width: 2.5rem;
   height: 2px;
   border-radius: 999px;
@@ -2560,7 +3032,7 @@ body.plaza-time-warning::before {
 .plaza-wordmark {
   font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .plaza-host-chip {
@@ -2603,5 +3075,1018 @@ body.plaza-time-warning::before {
   body.plaza-time-warning::before {
     animation: none;
     opacity: 0.16;
+  }
+}
+
+/* ------------------------------------------------------- interactive table
+   Real objects on the table: a rollable 3D die, a fanned hand of game cards,
+   stamped letter tiles synced to the join input, player tokens and a tray.
+   Everything decorative is aria-hidden; everything clickable is a button. */
+
+/* --- die ---------------------------------------------------------------- */
+
+.plaza-dice {
+  --dice-size: 2.4rem;
+  display: inline-grid;
+  place-items: center;
+  width: calc(var(--dice-size) * 1.5);
+  height: calc(var(--dice-size) * 1.5);
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 0.7rem;
+}
+
+.plaza-dice--sm {
+  --dice-size: 1.9rem;
+}
+
+.plaza-dice__scene {
+  width: var(--dice-size);
+  height: var(--dice-size);
+  perspective: 18rem;
+  filter: drop-shadow(0 10px 16px rgb(0 0 0 / 0.4));
+  transition: transform 200ms ease;
+}
+
+.plaza-dice:hover .plaza-dice__scene,
+.plaza-dice:focus-visible .plaza-dice__scene {
+  transform: translateY(-3px) rotate(-4deg) scale(1.06);
+}
+
+.plaza-dice:active .plaza-dice__scene {
+  transform: translateY(0) scale(0.96);
+}
+
+.plaza-dice__cube {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+.plaza-dice__face {
+  --pip: #43301c;
+  position: absolute;
+  inset: 0;
+  border-radius: 18%;
+  border: 1px solid rgb(126 95 56 / 0.5);
+  background-color: #f4e8cf;
+  background-image: linear-gradient(145deg, #fdf6e6, #e8d9bb);
+  box-shadow: inset 0 0 0.45rem rgb(120 90 50 / 0.28);
+  backface-visibility: hidden;
+}
+
+/* Pips drawn as radial gradients, sized relative to the die. */
+.plaza-dice__face--1 {
+  transform: translateZ(calc(var(--dice-size) / 2));
+  background-image:
+    radial-gradient(13% 13% at 50% 50%, var(--pip) 98%, transparent),
+    linear-gradient(145deg, #fdf6e6, #e8d9bb);
+}
+
+.plaza-dice__face--2 {
+  transform: rotateX(-90deg) translateZ(calc(var(--dice-size) / 2));
+  background-image:
+    radial-gradient(13% 13% at 30% 30%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 70% 70%, var(--pip) 98%, transparent),
+    linear-gradient(145deg, #fdf6e6, #e8d9bb);
+}
+
+.plaza-dice__face--3 {
+  transform: rotateY(90deg) translateZ(calc(var(--dice-size) / 2));
+  background-image:
+    radial-gradient(13% 13% at 26% 26%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 50% 50%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 74% 74%, var(--pip) 98%, transparent),
+    linear-gradient(145deg, #fdf6e6, #e8d9bb);
+}
+
+.plaza-dice__face--4 {
+  transform: rotateY(-90deg) translateZ(calc(var(--dice-size) / 2));
+  background-image:
+    radial-gradient(13% 13% at 28% 28%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 72% 28%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 28% 72%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 72% 72%, var(--pip) 98%, transparent),
+    linear-gradient(145deg, #fdf6e6, #e8d9bb);
+}
+
+.plaza-dice__face--5 {
+  transform: rotateX(90deg) translateZ(calc(var(--dice-size) / 2));
+  background-image:
+    radial-gradient(13% 13% at 28% 28%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 72% 28%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 50% 50%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 28% 72%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 72% 72%, var(--pip) 98%, transparent),
+    linear-gradient(145deg, #fdf6e6, #e8d9bb);
+}
+
+.plaza-dice__face--6 {
+  transform: rotateY(180deg) translateZ(calc(var(--dice-size) / 2));
+  background-image:
+    radial-gradient(13% 13% at 30% 24%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 70% 24%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 30% 50%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 70% 50%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 30% 76%, var(--pip) 98%, transparent),
+    radial-gradient(13% 13% at 70% 76%, var(--pip) 98%, transparent),
+    linear-gradient(145deg, #fdf6e6, #e8d9bb);
+}
+
+/* The action-panel garnish is pointer-events: none — re-enable for the die. */
+.plaza-panel-garnish__dice {
+  pointer-events: auto;
+  rotate: -6deg;
+}
+
+/* --- fanned game-card deck ---------------------------------------------- */
+
+.plaza-deck {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  min-height: 6.6rem;
+}
+
+.plaza-deck__card {
+  position: relative;
+  width: 4.05rem;
+  height: 5.6rem;
+  margin-inline: -0.45rem;
+  padding: 0;
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-radius: 0.65rem;
+  perspective: 17rem;
+  rotate: var(--deck-rot, 0deg);
+  translate: 0 var(--deck-y, 0rem);
+  transform-origin: 50% 120%;
+  filter: drop-shadow(0 10px 18px rgb(0 0 0 / 0.4));
+  transition:
+    rotate 220ms ease,
+    translate 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2),
+    filter 220ms ease,
+    z-index 0s;
+  opacity: 0;
+  animation: plaza-deck-deal 560ms cubic-bezier(0.2, 0.85, 0.3, 1.05) forwards;
+  animation-delay: calc(620ms + var(--deck-i, 0) * 90ms);
+}
+
+/* Two-sided flipper: cards rest face-down and flip to reveal their game. */
+.plaza-deck__flip {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-style: preserve-3d;
+  transition: transform 640ms cubic-bezier(0.22, 0.85, 0.3, 1.04);
+}
+
+.plaza-deck__card[data-revealed="true"] .plaza-deck__flip {
+  transform: rotateY(180deg);
+}
+
+.plaza-deck__side {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  overflow: hidden;
+  border-radius: 0.65rem;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.plaza-deck__back-side {
+  border: 1px solid rgb(58 33 16 / 0.85);
+  background:
+    radial-gradient(2.7rem 3.6rem at 50% 38%, rgb(240 146 69 / 0.28), transparent 74%),
+    repeating-linear-gradient(135deg, rgb(248 235 214 / 0.07) 0 6px, transparent 6px 12px),
+    linear-gradient(150deg, #3a2110, #221309 55%, #140c05);
+  box-shadow:
+    inset 0 0 0 2px rgb(248 235 214 / 0.12),
+    inset 0 0 0 6px rgb(19 11 5 / 0.55);
+  color: rgb(248 235 214 / 0.55);
+}
+
+.plaza-deck__monogram {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid rgb(248 235 214 / 0.26);
+  border-radius: 999px;
+  font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.plaza-deck__face {
+  transform: rotateY(180deg);
+  padding: 0.35rem 0.25rem;
+  border: 1px solid rgb(120 70 40 / 0.55);
+  background:
+    radial-gradient(
+      3.4rem 4.2rem at 50% 30%,
+      color-mix(in srgb, var(--game-tone, var(--plaza-accent)) 38%, transparent),
+      transparent 76%
+    ),
+    repeating-linear-gradient(135deg, #f4e3c8 0 5px, #eed7b4 5px 10px);
+  box-shadow: inset 0 0 0 3px rgb(255 250 238 / 0.78);
+  color: #3a2614;
+}
+
+/* Fan arc for the five cards. */
+.plaza-deck__card:nth-child(1) { --deck-rot: -14deg; --deck-y: 0.55rem; }
+.plaza-deck__card:nth-child(2) { --deck-rot: -7deg; --deck-y: 0.15rem; }
+.plaza-deck__card:nth-child(3) { --deck-rot: 0deg; --deck-y: 0rem; }
+.plaza-deck__card:nth-child(4) { --deck-rot: 7deg; --deck-y: 0.15rem; }
+.plaza-deck__card:nth-child(5) { --deck-rot: 14deg; --deck-y: 0.55rem; }
+
+@keyframes plaza-deck-deal {
+  from {
+    opacity: 0;
+    translate: 0 1.6rem;
+    rotate: calc(var(--deck-rot, 0deg) + 10deg);
+  }
+  to {
+    opacity: 1;
+    translate: 0 var(--deck-y, 0rem);
+    rotate: var(--deck-rot, 0deg);
+  }
+}
+
+.plaza-deck__card:hover,
+.plaza-deck__card:focus-visible {
+  z-index: 3;
+  translate: 0 calc(var(--deck-y, 0rem) - 0.7rem);
+  rotate: calc(var(--deck-rot, 0deg) * 0.4);
+  filter: drop-shadow(0 16px 30px rgb(0 0 0 / 0.48));
+}
+
+.plaza-deck__card--selected {
+  z-index: 2;
+  translate: 0 calc(var(--deck-y, 0rem) - 0.95rem);
+  filter: drop-shadow(0 16px 32px rgb(0 0 0 / 0.5))
+    drop-shadow(0 0 18px color-mix(in srgb, var(--game-tone, var(--plaza-accent)) 50%, transparent));
+}
+
+.plaza-deck__card--selected .plaza-deck__face {
+  border-color: color-mix(in srgb, var(--game-tone, var(--plaza-accent)) 80%, #fff 8%);
+  box-shadow:
+    inset 0 0 0 3px rgb(255 250 238 / 0.9),
+    inset 0 0 0 4px color-mix(in srgb, var(--game-tone, var(--plaza-accent)) 65%, transparent);
+}
+
+.plaza-deck__corner {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.42rem;
+  font-size: 0.5rem;
+  opacity: 0.7;
+}
+
+.plaza-deck__icon {
+  font-size: 1.45rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.2));
+}
+
+.plaza-deck__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgb(58 38 20 / 0.85);
+}
+
+/* --- tray --------------------------------------------------------------- */
+
+.plaza-tray {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(248 235 214 / 0.15);
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(20rem 9rem at 100% -2rem, rgb(240 146 69 / 0.14), transparent 70%),
+    radial-gradient(rgb(255 240 216 / 0.035) 1px, transparent 1px),
+    linear-gradient(rgb(31 21 12 / 0.86), rgb(23 14 7 / 0.82));
+  background-size: auto, 20px 20px, auto;
+  box-shadow:
+    0 30px 90px rgb(0 0 0 / 0.55),
+    inset 0 1px 0 rgb(255 244 226 / 0.1);
+  color: #f8efdd;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.plaza-tray__dice {
+  margin: -0.4rem -0.3rem -0.6rem 0;
+}
+
+.plaza-tray__hint {
+  margin-top: 0.55rem;
+  text-align: center;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(220 200 172 / 0.55);
+}
+
+/* Featured card flips over when the deck selection changes. */
+.plaza-tray__feature {
+  margin-top: 0.8rem;
+  perspective: 60rem;
+}
+
+.plaza-feature-card--flip {
+  animation: plaza-card-flip-in 460ms cubic-bezier(0.2, 0.8, 0.3, 1.05);
+  transform-origin: 50% 50%;
+}
+
+@keyframes plaza-card-flip-in {
+  from {
+    opacity: 0;
+    transform: rotateY(-72deg) scale(0.96);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: rotateY(0deg) scale(1);
+  }
+}
+
+/* Player tokens — round chips around the tray. */
+.plaza-tray__tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.9rem;
+}
+
+.plaza-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  opacity: 0;
+  animation: plaza-feed-in 420ms ease forwards;
+  animation-delay: calc(760ms + var(--token-i, 0) * 110ms);
+}
+
+.plaza-token__chip {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 32% 28%, rgb(255 226 178 / 0.5), transparent 55%),
+    radial-gradient(circle at 50% 50%, #c2702e 55%, #8f4c1a 92%);
+  box-shadow:
+    inset 0 0 0 2px rgb(255 226 178 / 0.42),
+    inset 0 0 0 5px rgb(120 60 18 / 0.5),
+    0 5px 12px rgb(0 0 0 / 0.42);
+  color: #fff3df;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.plaza-token--host .plaza-token__chip {
+  background:
+    radial-gradient(circle at 32% 28%, rgb(255 240 200 / 0.6), transparent 55%),
+    radial-gradient(circle at 50% 50%, #d99b33 55%, #9c6716 92%);
+}
+
+.plaza-token__chip--more {
+  background:
+    radial-gradient(circle at 32% 28%, rgb(255 240 216 / 0.2), transparent 55%),
+    radial-gradient(circle at 50% 50%, rgb(90 64 40 / 0.85) 55%, rgb(56 38 22 / 0.9) 92%);
+  font-size: 0.72rem;
+  color: rgb(240 226 206 / 0.85);
+}
+
+.plaza-token__name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #f3e7d4;
+}
+
+.plaza-token__host {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--plaza-accent) 30%, transparent);
+  color: rgb(248 226 200 / 0.95);
+  padding: 0.05rem 0.4rem;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Room-code tiles on the tray: wooden, slightly scattered. */
+.plaza-preview-code__digit--tile {
+  border: 1px solid rgb(96 66 30 / 0.55);
+  background: linear-gradient(150deg, #e9cf9d, #cda86a);
+  box-shadow:
+    inset 0 2px 0 rgb(255 245 220 / 0.7),
+    inset 0 -3px 0 rgb(96 66 30 / 0.4),
+    0 6px 14px rgb(0 0 0 / 0.35);
+  color: #4a3014;
+  rotate: var(--tile-rot, 0deg);
+}
+
+/* Activity feed as note slips. */
+.plaza-tray__notes {
+  gap: 0.4rem;
+}
+
+.plaza-tray__note {
+  border: 1px solid rgb(248 235 214 / 0.1);
+  border-radius: 0.45rem;
+  background: linear-gradient(rgb(248 235 214 / 0.07), rgb(248 235 214 / 0.03));
+  padding: 0.32rem 0.55rem;
+  rotate: calc((var(--feed-i, 0) - 1) * 0.7deg);
+}
+
+/* --- join-flow letter tiles --------------------------------------------- */
+
+.plaza-code-entry {
+  position: relative;
+  display: inline-flex;
+  flex: 1;
+  justify-content: center;
+  padding: 0.2rem 0.1rem;
+}
+
+.plaza-code-tiles {
+  display: inline-flex;
+  gap: 0.32rem;
+}
+
+.plaza-code-tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.55rem;
+  border: 1px solid var(--plaza-line-strong);
+  border-radius: 0.55rem;
+  background: linear-gradient(
+    176deg,
+    color-mix(in srgb, var(--plaza-surface) 92%, transparent),
+    color-mix(in srgb, var(--plaza-surface-2) 75%, transparent)
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent),
+    0 3px 0 color-mix(in srgb, var(--plaza-line-strong) 55%, transparent);
+  font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
+  font-size: 1.1rem;
+  font-weight: 800;
+  transition: border-color 160ms ease, box-shadow 160ms ease, translate 160ms ease;
+  opacity: 0;
+  animation: plaza-tile-in 420ms cubic-bezier(0.2, 0.85, 0.3, 1.1) forwards;
+  animation-delay: var(--tile-delay, 520ms);
+}
+
+@keyframes plaza-tile-in {
+  from {
+    opacity: 0;
+    translate: 0 0.5rem;
+    rotate: 4deg;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+    rotate: 0deg;
+  }
+}
+
+.plaza-code-tile__ghost {
+  color: var(--plaza-muted-2);
+  opacity: 0.4;
+}
+
+.plaza-code-tile--filled {
+  border-color: rgb(96 66 30 / 0.6);
+  background: linear-gradient(150deg, #e9cf9d, #cda86a);
+  box-shadow:
+    inset 0 2px 0 rgb(255 245 220 / 0.7),
+    inset 0 -3px 0 rgb(96 66 30 / 0.4),
+    0 4px 10px rgb(0 0 0 / 0.32);
+  color: #4a3014;
+}
+
+.plaza-code-tile__char {
+  display: inline-block;
+  animation: plaza-tile-stamp 200ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+
+@keyframes plaza-tile-stamp {
+  from {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.plaza-code-tile--active {
+  border-color: var(--plaza-accent);
+  translate: 0 -2px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent),
+    0 3px 0 color-mix(in srgb, var(--plaza-accent) 45%, transparent),
+    0 0 16px color-mix(in srgb, var(--plaza-accent) 45%, transparent);
+}
+
+/* The real input lies invisibly over the tiles: taps focus it, the keyboard
+   opens on mobile, and the form still posts `code` as before. 16px font
+   prevents iOS focus zoom even though the text is invisible. */
+.plaza-code-entry__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  text-align: center;
+  outline: none;
+  cursor: text;
+}
+
+.plaza-code-entry__input::selection {
+  background: transparent;
+}
+
+/* Lobby room code inherits the same wooden-tile language. */
+.plaza-code-hero__digit {
+  border-color: rgb(96 66 30 / 0.5);
+  background: linear-gradient(150deg, #e9cf9d, #cda86a);
+  box-shadow:
+    inset 0 2px 0 rgb(255 245 220 / 0.7),
+    inset 0 -3px 0 rgb(96 66 30 / 0.4),
+    0 6px 16px rgb(0 0 0 / 0.28);
+  color: #4a3014;
+  rotate: calc((var(--digit-i, 0) - 2) * 1deg);
+}
+
+/* --- responsive + reduced motion ----------------------------------------- */
+
+@media (max-width: 420px) {
+  .plaza-deck__card {
+    width: 3.55rem;
+    height: 5rem;
+    margin-inline: -0.5rem;
+  }
+
+  .plaza-code-tile {
+    width: 1.95rem;
+    height: 2.35rem;
+    font-size: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plaza-deck__card,
+  .plaza-code-tile,
+  .plaza-token {
+    animation: none;
+    opacity: 1;
+  }
+
+  .plaza-feature-card--flip {
+    animation: none;
+  }
+
+  .plaza-code-tile__char {
+    animation: none;
+  }
+
+  .plaza-dice__scene,
+  .plaza-deck__card,
+  .plaza-code-tile {
+    transition: none;
+  }
+}
+
+/* ===================================================================== scene
+   The landing hero is a living 3D game table. A pointer-driven rig tilts an
+   object plane (perspective + rotateX/Y) while scattered pieces parallax at
+   their own depths. Content columns drift a few px for cohesion but never
+   rotate, so text stays crisp and forms stay usable.
+
+   Vars written by <TableScene/> via rAF + lerp:
+     --tilt-x / --tilt-y : plane rotation in deg (≈ ±2)
+     --par-x  / --par-y  : normalized pointer offset (−1 … 1)
+---------------------------------------------------------------------------- */
+
+.plaza-scene {
+  position: relative;
+  --tilt-x: 0;
+  --tilt-y: 0;
+  --par-x: 0;
+  --par-y: 0;
+}
+
+.plaza-scene__objects {
+  position: absolute;
+  inset: -4rem 0 0;
+  z-index: 0;
+  pointer-events: none;
+  perspective: 95rem;
+}
+
+.plaza-scene__plane {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(calc(var(--tilt-y) * 1deg)) rotateY(calc(var(--tilt-x) * -1deg));
+  transform-style: preserve-3d;
+}
+
+/* Content drift: translate-only micro-parallax (positive drifts with the
+   cursor, negative against it — reads as nearer/further from the lamp). */
+.plaza-scene__drift {
+  transform: translate3d(
+    calc(var(--par-x) * var(--drift, 0.2) * 1rem),
+    calc(var(--par-y) * var(--drift, 0.2) * 0.75rem),
+    0
+  );
+}
+
+/* --- scattered table objects -------------------------------------------- */
+
+.plaza-object {
+  position: absolute;
+  left: var(--ox, 50%);
+  top: var(--oy, 50%);
+  z-index: var(--oz, 0);
+  transform: translate(-50%, -50%)
+    translate3d(
+      calc(var(--par-x) * var(--depth, 0.4) * 2.4rem),
+      calc(var(--par-y) * var(--depth, 0.4) * 1.9rem),
+      0
+    );
+  filter: drop-shadow(0 16px 22px rgb(0 0 0 / 0.4));
+}
+
+.plaza-object--interactive {
+  pointer-events: auto;
+}
+
+.plaza-object__enter {
+  display: block;
+  opacity: 0;
+  animation: plaza-object-in 720ms cubic-bezier(0.2, 0.85, 0.3, 1.1) forwards;
+  animation-delay: var(--o-delay, 760ms);
+}
+
+@keyframes plaza-object-in {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem) scale(0.82) rotate(8deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+.plaza-object__float {
+  display: block;
+  rotate: var(--rot, 0deg);
+  animation: plaza-object-float var(--float-dur, 6.5s) ease-in-out var(--float-delay, 0s)
+    infinite alternate;
+}
+
+@keyframes plaza-object-float {
+  from {
+    translate: 0 0;
+    rotate: var(--rot, 0deg);
+  }
+  to {
+    translate: 0 -0.5rem;
+    rotate: calc(var(--rot, 0deg) + var(--rot-drift, 3deg));
+  }
+}
+
+/* Bigger piece variants for the open table. */
+.plaza-piece-card--lg {
+  width: 3.7rem;
+  height: 5rem;
+  border-radius: 0.6rem;
+}
+
+/* Espresso card back used by scattered cards (mirrors the deck back). */
+.plaza-piece-cardback {
+  display: grid;
+  place-items: center;
+  width: 3.7rem;
+  height: 5rem;
+  border: 1px solid rgb(58 33 16 / 0.85);
+  border-radius: 0.6rem;
+  background:
+    radial-gradient(2.7rem 3.6rem at 50% 38%, rgb(240 146 69 / 0.24), transparent 74%),
+    repeating-linear-gradient(135deg, rgb(248 235 214 / 0.07) 0 6px, transparent 6px 12px),
+    linear-gradient(150deg, #3a2110, #221309 55%, #140c05);
+  box-shadow:
+    inset 0 0 0 2px rgb(248 235 214 / 0.12),
+    inset 0 0 0 6px rgb(19 11 5 / 0.55);
+  color: rgb(248 235 214 / 0.5);
+  font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+/* CSS meeple pawn. */
+.plaza-piece-pawn {
+  position: relative;
+  width: 1.55rem;
+  height: 2.15rem;
+}
+
+.plaza-piece-pawn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0.95rem;
+  height: 0.95rem;
+  translate: -50% 0;
+  border-radius: 999px;
+  background: radial-gradient(circle at 34% 30%, color-mix(in srgb, var(--pawn-color, #c2702e) 55%, #fff), var(--pawn-color, #c2702e) 70%);
+}
+
+.plaza-piece-pawn::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 1.55rem;
+  height: 1.35rem;
+  translate: -50% 0;
+  border-radius: 45% 45% 32% 32% / 90% 90% 22% 22%;
+  background: radial-gradient(circle at 36% 22%, color-mix(in srgb, var(--pawn-color, #c2702e) 60%, #fff 18%), var(--pawn-color, #c2702e) 62%, color-mix(in srgb, var(--pawn-color, #c2702e) 60%, #000) 100%);
+}
+
+/* ------------------------------------------------------------- dice rolls
+   The cube's orientation lives in --dice-rx/--dice-ry (deg, cumulative so it
+   always tumbles forward). The component adds whole turns per roll; this
+   transition makes it feel thrown. */
+
+.plaza-dice__cube {
+  transform: rotateX(calc(var(--dice-rx, -21) * 1deg)) rotateY(calc(var(--dice-ry, 28) * 1deg));
+  transition: transform 1150ms cubic-bezier(0.16, 0.84, 0.24, 1.01);
+}
+
+.plaza-dice--lg {
+  --dice-size: 3.1rem;
+}
+
+.plaza-dice--hero {
+  --dice-size: clamp(2.7rem, 4vw, 3.6rem);
+}
+
+.plaza-dice[data-rolling="true"] .plaza-dice__scene {
+  animation: plaza-dice-hop 620ms cubic-bezier(0.3, 0.7, 0.3, 1.2);
+}
+
+@keyframes plaza-dice-hop {
+  0% {
+    translate: 0 0;
+  }
+  38% {
+    translate: 0 -1.15rem;
+  }
+  72% {
+    translate: 0 0.1rem;
+  }
+  100% {
+    translate: 0 0;
+  }
+}
+
+/* ----------------------------------------------------------- tray extras */
+
+.plaza-token__chip {
+  transition: translate 160ms ease, box-shadow 160ms ease;
+}
+
+.plaza-token:hover .plaza-token__chip,
+.plaza-token:focus-visible .plaza-token__chip {
+  translate: 0 -3px;
+  box-shadow:
+    inset 0 0 0 2px rgb(255 226 178 / 0.55),
+    inset 0 0 0 5px rgb(120 60 18 / 0.5),
+    0 8px 18px rgb(0 0 0 / 0.5),
+    0 0 16px rgb(240 146 69 / 0.45);
+}
+
+/* ------------------------------------------------------------- equalizer
+   Real DOM bars; play state is toggled with data-active. Bars get per-bar
+   --eq-dur/--eq-delay inline vars so the wave never loops in sync. */
+
+.plaza-eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.22rem;
+  height: 2.4rem;
+  padding: 0 0.15rem;
+}
+
+.plaza-eq span {
+  flex: 1;
+  min-width: 0.18rem;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    var(--plaza-accent-2),
+    color-mix(in srgb, var(--plaza-accent) 75%, transparent)
+  );
+  transform: scaleY(0.16);
+  transform-origin: bottom;
+  opacity: 0.5;
+  transition: transform 420ms ease, opacity 420ms ease;
+}
+
+.plaza-eq[data-active="true"] span {
+  opacity: 0.95;
+  animation: plaza-eq-bounce var(--eq-dur, 900ms) ease-in-out var(--eq-delay, 0ms) infinite
+    alternate;
+}
+
+@keyframes plaza-eq-bounce {
+  from {
+    transform: scaleY(var(--eq-min, 0.2));
+  }
+  to {
+    transform: scaleY(var(--eq-max, 1));
+  }
+}
+
+/* ------------------------------------------------------------- role flip
+   Imposteri role reveal: the card rests face-down; tapping flips it over.
+   Both sides share a grid cell so the flipper sizes to the tallest side. */
+
+.plaza-role-stage {
+  perspective: 62rem;
+}
+
+.plaza-role-flip {
+  position: relative;
+  display: grid;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: inherit;
+  transform-style: preserve-3d;
+  transition: transform 720ms cubic-bezier(0.22, 0.82, 0.28, 1.02);
+}
+
+.plaza-role-flip[aria-pressed="true"] {
+  transform: rotateY(180deg);
+}
+
+.plaza-role-flip__side {
+  grid-area: 1 / 1;
+  min-width: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.plaza-role-flip__front {
+  display: grid;
+  place-items: center;
+  gap: 0.7rem;
+  padding: 1.6rem 1.2rem;
+  border: 1px solid color-mix(in srgb, var(--plaza-accent) 38%, var(--plaza-line));
+  border-radius: 1.15rem;
+  background:
+    radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--plaza-accent) 26%, transparent), transparent 42%),
+    repeating-linear-gradient(135deg, rgb(248 235 214 / 0.07) 0 8px, transparent 8px 16px),
+    linear-gradient(150deg, #3a2110, #201208 55%, #130b05);
+  box-shadow:
+    0 20px 52px rgb(0 0 0 / 0.34),
+    inset 0 1px 0 rgb(255 244 226 / 0.14);
+  color: #f8efdd;
+}
+
+.plaza-role-flip__monogram {
+  display: grid;
+  place-items: center;
+  width: 3.1rem;
+  height: 3.1rem;
+  border: 1px solid rgb(248 235 214 / 0.28);
+  border-radius: 999px;
+  font-family: var(--font-display, var(--font-geist-sans)), sans-serif;
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: rgb(248 235 214 / 0.85);
+}
+
+.plaza-role-flip__hint {
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: rgb(248 235 214 / 0.6);
+}
+
+.plaza-role-flip__back {
+  transform: rotateY(180deg);
+}
+
+.plaza-role-flip:focus-visible {
+  outline: 2px solid var(--plaza-accent);
+  outline-offset: 3px;
+  border-radius: 1.15rem;
+}
+
+/* ------------------------------------------------------- asocijacije drama */
+
+.plaza-asoc-final--won {
+  border-color: color-mix(in srgb, var(--plaza-gold) 65%, var(--plaza-line));
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--plaza-gold) 16%, transparent),
+    0 0 38px color-mix(in srgb, var(--plaza-gold) 30%, transparent),
+    var(--plaza-shadow-soft);
+  animation: plaza-final-pop 600ms cubic-bezier(0.2, 0.85, 0.3, 1.18);
+}
+
+@keyframes plaza-final-pop {
+  0% {
+    transform: scale(0.94);
+  }
+  55% {
+    transform: scale(1.025);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* --------------------------------------------------- scene guards
+   Touch and small screens: no scattered desktop pieces, no tilt (the rig
+   never starts), lighter shadows. Reduced motion: everything static. */
+
+@media (max-width: 1023px) {
+  .plaza-object[data-desktop-only="true"] {
+    display: none;
+  }
+
+  .plaza-object {
+    filter: drop-shadow(0 8px 12px rgb(0 0 0 / 0.32));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plaza-scene__plane,
+  .plaza-scene__drift,
+  .plaza-object {
+    transform: none;
+  }
+
+  .plaza-object__enter,
+  .plaza-object__float,
+  .plaza-dice[data-rolling="true"] .plaza-dice__scene,
+  .plaza-letter-hero,
+  .plaza-asoc-final--won {
+    animation: none;
+  }
+
+  .plaza-object__enter {
+    opacity: 1;
+  }
+
+  .plaza-dice__cube,
+  .plaza-deck__flip,
+  .plaza-role-flip {
+    transition: none;
+  }
+
+  .plaza-eq[data-active="true"] span {
+    animation: none;
+    transform: scaleY(0.55);
   }
 }

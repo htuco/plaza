@@ -435,7 +435,9 @@ function FinalCard({
 
   return (
     <section
-      className={`plaza-asoc-final rounded-xl p-4 text-center ${wrong ? "plaza-shake" : ""}`}
+      className={`plaza-asoc-final rounded-xl p-4 text-center ${wrong ? "plaza-shake" : ""} ${
+        solved ? "plaza-asoc-final--won" : ""
+      }`}
       aria-label={t("asocijacije.finalAria")}
     >
       <p className="plaza-label">{t("asocijacije.finalSolution")}</p>
