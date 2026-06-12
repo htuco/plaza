@@ -6,6 +6,7 @@ import { GameDetails } from "@/components/game-details";
 import { GAME_ICONS } from "@/components/game-icons";
 import { LeaveRoomButton } from "@/components/leave-room-button";
 import { RoomCode } from "@/components/room-code";
+import { ShareRoom } from "@/components/share-room";
 import { usePreferences } from "@/components/preferences-provider";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
@@ -155,6 +156,7 @@ export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null })
           <p className="plaza-label">{t("lobby.roomCode")}</p>
           <RoomCode code={room.code} />
           <p className="plaza-muted-2 text-xs">{t("lobby.shareCode")}</p>
+          <ShareRoom code={room.code} />
           {me && (
             <p className="plaza-muted text-sm">
               {t("lobby.playingAs")} <span className="font-semibold">{me.nickname}</span>

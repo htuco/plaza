@@ -57,6 +57,10 @@ export function ImposteriClient({
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [overlay, setOverlay] = useState<TransitionOverlay | null>(null);
+  // Role card rests face-down each round; the player flips it themselves.
+  // `revealedRound` records which round the flip applies to, so a new round
+  // automatically reads as face-down without an effect (see below).
+  const [revealedRound, setRevealedRound] = useState<number | null>(null);
   const overlayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPhaseKey = useRef<string | null>(null);
   const lastResultKey = useRef<string | null>(null);
@@ -273,6 +277,12 @@ export function ImposteriClient({
     return new Map(snapshot?.players.map((player) => [player.id, player]) ?? []);
   }, [snapshot?.players]);
 
+  // The card counts as revealed only while the recorded round matches the
+  // live round, so a new round deals a fresh face-down card with no effect
+  // and no face-up flash on the first frame.
+  const currentRound = snapshot?.view.round;
+  const roleRevealed = currentRound !== undefined && revealedRound === currentRound;
+
   if (!snapshot || !view) {
     return (
       <div className="plaza-panel rounded-lg p-5">
@@ -290,6 +300,7 @@ export function ImposteriClient({
   const result = view.result;
   const startPlayer = view.startPlayerId ? playersById.get(view.startPlayerId) : null;
   const isImpostor = view.myRole === "impostor";
+  const roleHidden = view.isInRound && !roleRevealed;
 
   return (
     <>
@@ -302,10 +313,14 @@ export function ImposteriClient({
             </div>
             <span
               className={`rounded-lg px-3 py-2 text-sm font-medium ${
-                isImpostor ? "plaza-status-invalid" : "plaza-status-valid"
+                roleHidden
+                  ? "plaza-status-review"
+                  : isImpostor
+                    ? "plaza-status-invalid"
+                    : "plaza-status-valid"
               }`}
             >
-              {t(`imposteri.role.${view.myRole}`)}
+              {roleHidden ? t("imposteri.roleHidden") : t(`imposteri.role.${view.myRole}`)}
             </span>
           </div>
         </div>
@@ -315,36 +330,74 @@ export function ImposteriClient({
         <div className="grid gap-5 p-4">
           <section className="grid gap-3">
             <p className="plaza-label">{t("imposteri.yourInfo")}</p>
-            <div
-              className={`plaza-word-card rounded-2xl px-5 py-7 text-center ${
-                isImpostor ? "plaza-word-card--impostor" : "plaza-word-card--crew"
-              }`}
-            >
-              <p className="plaza-word-card__label">{t("imposteri.category")}</p>
-              <p className="plaza-word-card__category">{view.category}</p>
-              {!isImpostor && view.secretWord && (
-                <>
-                  <div className="plaza-word-card__divider" />
-                  <p className="plaza-word-card__label">{t("imposteri.secretWord")}</p>
-                  <p className="plaza-word-card__word">{view.secretWord}</p>
-                </>
-              )}
-              {isImpostor && (
-                <>
-                  <div className="plaza-word-card__divider" />
-                  <p className="plaza-word-card__label">{t("imposteri.impostorHintLabel")}</p>
-                  <p className="plaza-word-card__hint">
-                    {view.impostorHint ?? t("imposteri.secretHidden")}
-                  </p>
-                </>
-              )}
+            {/* Dramatic role reveal: the card is dealt face-down and the
+                player flips it. Tapping again hides it from shoulder-surfers.
+                The face-down side carries aria-hidden so the role never
+                reaches the accessibility tree until flipped. */}
+            <div className="plaza-role-stage">
+              <button
+                type="button"
+                className="plaza-role-flip"
+                aria-pressed={roleRevealed}
+                aria-label={roleRevealed ? t("imposteri.tapToHide") : t("imposteri.tapToReveal")}
+                onClick={() =>
+                  setRevealedRound((current) =>
+                    current === view.round ? null : view.round,
+                  )
+                }
+              >
+                <span
+                  className="plaza-role-flip__side plaza-role-flip__front"
+                  aria-hidden={roleRevealed}
+                >
+                  <span className="plaza-role-flip__monogram" aria-hidden="true">
+                    P
+                  </span>
+                  <span className="plaza-role-flip__hint">{t("imposteri.tapToReveal")}</span>
+                </span>
+                <span
+                  className="plaza-role-flip__side plaza-role-flip__back"
+                  aria-hidden={!roleRevealed}
+                >
+                  <span
+                    className={`plaza-word-card grid rounded-2xl px-5 py-7 text-center ${
+                      isImpostor ? "plaza-word-card--impostor" : "plaza-word-card--crew"
+                    }`}
+                  >
+                    <span className="plaza-word-card__label">{t("imposteri.category")}</span>
+                    <span className="plaza-word-card__category">{view.category}</span>
+                    {!isImpostor && view.secretWord && (
+                      <>
+                        <span className="plaza-word-card__divider" />
+                        <span className="plaza-word-card__label">
+                          {t("imposteri.secretWord")}
+                        </span>
+                        <span className="plaza-word-card__word">{view.secretWord}</span>
+                      </>
+                    )}
+                    {isImpostor && (
+                      <>
+                        <span className="plaza-word-card__divider" />
+                        <span className="plaza-word-card__label">
+                          {t("imposteri.impostorHintLabel")}
+                        </span>
+                        <span className="plaza-word-card__hint">
+                          {view.impostorHint ?? t("imposteri.secretHidden")}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </span>
+              </button>
             </div>
             <p className="plaza-muted text-sm">
               {!view.isInRound
                 ? t("imposteri.notInRound")
-                : isImpostor
-                  ? t("imposteri.impostorHint")
-                  : t("imposteri.crewHint")}
+                : roleHidden
+                  ? t("imposteri.tapToReveal")
+                  : isImpostor
+                    ? t("imposteri.impostorHint")
+                    : t("imposteri.crewHint")}
             </p>
           </section>
 
