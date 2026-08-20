@@ -18,6 +18,7 @@
 /.claude/*
 !/.claude/settings.json
 !/.claude/agents/
+!/.claude/agent-templates/
 !/.claude/commands/
 !/.claude/hooks/
 !/.claude/skills/
