@@ -1,12 +1,14 @@
 import type { GameModule } from "@/features/registry";
 import {
   ARTIST_POINTS,
+  COUNTDOWN_SECONDS,
   DEFAULT_SONG_SETTINGS,
   FIRST_MATCH_BONUS,
   MAX_GUESS_DURATION_SECONDS,
   MAX_SONG_ROUNDS,
   MIN_GUESS_DURATION_SECONDS,
   MIN_SONG_ROUNDS,
+  ROUND_END_PAUSE_SECONDS,
   TITLE_POINTS,
 } from "./types";
 import type {
@@ -33,6 +35,7 @@ function isGuessTheSongIntent(value: unknown): value is GuessTheSongIntent {
     case "submit-guess":
       return typeof value.guess === "string";
     case "end-round":
+    case "resolve-countdown":
     case "next-round":
     case "play-again":
       return true;
@@ -71,7 +74,12 @@ function normalizeSettings(value: unknown): GuessTheSongSettings {
 }
 
 function normalizePhase(value: unknown): Phase {
-  return value === "playing" || value === "round-end" || value === "finished" ? value : "setup";
+  return value === "countdown" ||
+    value === "playing" ||
+    value === "round-end" ||
+    value === "finished"
+    ? value
+    : "setup";
 }
 
 function normalizeTracks(value: unknown): SongTrack[] {
@@ -122,7 +130,10 @@ export function normalizeSongState(state: GuessTheSongState): GuessTheSongState 
       typeof stored.roundIndex === "number" && stored.roundIndex >= 0
         ? Math.floor(stored.roundIndex)
         : 0,
+    playbackStartAt: typeof stored.playbackStartAt === "number" ? stored.playbackStartAt : null,
     roundDeadlineAt: typeof stored.roundDeadlineAt === "number" ? stored.roundDeadlineAt : null,
+    roundEndAdvanceAt:
+      typeof stored.roundEndAdvanceAt === "number" ? stored.roundEndAdvanceAt : null,
     progress: normalizeProgress(stored.progress),
     firstMatchPlayerId:
       typeof stored.firstMatchPlayerId === "string" ? stored.firstMatchPlayerId : null,
@@ -148,18 +159,19 @@ function normalizeForMatch(input: string): string {
     .trim();
 }
 
+// Exact match only (after normalizing case/diacritics/punctuation) — no typo
+// tolerance, so a different/longer word never gets credit for a real answer.
 export function guessMatchesAnswer(guess: string, answer: string): boolean {
   const normalizedGuess = normalizeForMatch(guess);
   const normalizedAnswer = normalizeForMatch(answer);
   if (!normalizedGuess || !normalizedAnswer) return false;
   if (normalizedGuess === normalizedAnswer) return true;
-  // Containment for multi-word answers, so "bohemian rhapsody queen" still hits.
-  if (normalizedAnswer.length >= 4 && normalizedGuess.includes(normalizedAnswer)) return true;
-  if (normalizedGuess.length >= 4 && normalizedAnswer.includes(normalizedGuess)) {
-    // Avoid 4-letter guesses matching inside long titles too eagerly.
-    return normalizedGuess.length / normalizedAnswer.length >= 0.6;
-  }
-  return false;
+
+  // Multi-word answers (e.g. "bohemian rhapsody"): also accept a guess that
+  // exactly matches just one significant word of the title, so players
+  // don't have to type the whole thing.
+  const answerWords = normalizedAnswer.split(" ").filter((w) => w.length >= 3);
+  return answerWords.length > 1 && answerWords.includes(normalizedGuess);
 }
 
 function effectiveRounds(state: GuessTheSongState): number {
@@ -177,8 +189,29 @@ function playerDone(state: GuessTheSongState, progress: PlayerRoundProgress): bo
   return progress.titleMatched && progress.artistMatched;
 }
 
-function endRound(state: GuessTheSongState): GuessTheSongState {
-  return { ...state, phase: "round-end", roundDeadlineAt: null };
+function endRound(state: GuessTheSongState, now: number): GuessTheSongState {
+  return {
+    ...state,
+    phase: "round-end",
+    roundDeadlineAt: null,
+    roundEndAdvanceAt: now + ROUND_END_PAUSE_SECONDS * 1000,
+  };
+}
+
+// Every round (including the first) opens with a shared 3-2-1 countdown so
+// playback starts at the same instant on every device.
+function startCountdown(state: GuessTheSongState, roundIndex: number, now: number): GuessTheSongState {
+  return {
+    ...state,
+    phase: "countdown",
+    roundIndex,
+    playbackStartAt: now + COUNTDOWN_SECONDS * 1000,
+    roundDeadlineAt: null,
+    roundEndAdvanceAt: null,
+    progress: {},
+    firstMatchPlayerId: null,
+    roundPoints: {},
+  };
 }
 
 export const guessTheSongModule: GameModule<
@@ -198,7 +231,9 @@ export const guessTheSongModule: GameModule<
     playlistLabel: null,
     tracks: [],
     roundIndex: 0,
+    playbackStartAt: null,
     roundDeadlineAt: null,
+    roundEndAdvanceAt: null,
     progress: {},
     firstMatchPlayerId: null,
     roundPoints: {},
@@ -225,7 +260,7 @@ export const guessTheSongModule: GameModule<
 
     if (intent.kind === "submit-guess") {
       if (current.phase !== "playing") throw new Error("Round is not running.");
-      if (deadlinePassed) return endRound(current);
+      if (deadlinePassed) return endRound(current, ctx.now.getTime());
       const track = currentTrack(current);
       if (!track) throw new Error("Round is not running.");
 
@@ -275,31 +310,43 @@ export const guessTheSongModule: GameModule<
       const everyoneDone = ctx.playerIds.every((playerId) =>
         playerDone(next, next.progress[playerId] ?? { titleMatched: false, artistMatched: false }),
       );
-      return everyoneDone ? endRound(next) : next;
+      return everyoneDone ? endRound(next, ctx.now.getTime()) : next;
     }
 
     if (intent.kind === "end-round") {
       if (current.phase !== "playing") throw new Error("Round is not running.");
       if (!isHost && !deadlinePassed) throw new Error("The round is still running.");
-      return endRound(current);
+      return endRound(current, ctx.now.getTime());
     }
 
-    if (intent.kind === "next-round") {
-      if (!isHost) throw new Error("Only the host can advance the game.");
-      if (current.phase !== "round-end") throw new Error("Round is still running.");
-      const nextIndex = current.roundIndex + 1;
-      if (nextIndex >= effectiveRounds(current)) {
-        return { ...current, phase: "finished", roundDeadlineAt: null };
-      }
+    if (intent.kind === "resolve-countdown") {
+      if (current.phase !== "countdown") throw new Error("No countdown is running.");
+      const startPassed =
+        current.playbackStartAt !== null && ctx.now.getTime() >= current.playbackStartAt;
+      if (!startPassed) throw new Error("Countdown is still running.");
       return {
         ...current,
         phase: "playing",
-        roundIndex: nextIndex,
         roundDeadlineAt: ctx.now.getTime() + current.settings.guessDurationSeconds * 1000,
-        progress: {},
-        firstMatchPlayerId: null,
-        roundPoints: {},
       };
+    }
+
+    if (intent.kind === "next-round") {
+      if (current.phase !== "round-end") throw new Error("Round is still running.");
+      const advancePassed =
+        current.roundEndAdvanceAt !== null && ctx.now.getTime() >= current.roundEndAdvanceAt;
+      if (!isHost && !advancePassed) throw new Error("Still showing the answer.");
+      const nextIndex = current.roundIndex + 1;
+      if (nextIndex >= effectiveRounds(current)) {
+        return {
+          ...current,
+          phase: "finished",
+          playbackStartAt: null,
+          roundDeadlineAt: null,
+          roundEndAdvanceAt: null,
+        };
+      }
+      return startCountdown(current, nextIndex, ctx.now.getTime());
     }
 
     // play-again
@@ -311,7 +358,9 @@ export const guessTheSongModule: GameModule<
       playlistLabel: null,
       tracks: [],
       roundIndex: 0,
+      playbackStartAt: null,
       roundDeadlineAt: null,
+      roundEndAdvanceAt: null,
       progress: {},
       firstMatchPlayerId: null,
       roundPoints: {},
@@ -331,10 +380,15 @@ export const guessTheSongModule: GameModule<
       roundIndex: current.roundIndex,
       effectiveRounds: effectiveRounds(current),
       previewUrl:
-        track && (current.phase === "playing" || current.phase === "round-end")
+        track &&
+        (current.phase === "countdown" ||
+          current.phase === "playing" ||
+          current.phase === "round-end")
           ? track.previewUrl
           : null,
+      playbackStartAt: current.playbackStartAt,
       roundDeadlineAt: current.roundDeadlineAt,
+      roundEndAdvanceAt: current.roundEndAdvanceAt,
       myProgress: current.progress[playerId] ?? { titleMatched: false, artistMatched: false },
       matchedPlayerIds: Object.entries(current.progress)
         .filter(([, progress]) => progress.titleMatched || progress.artistMatched)

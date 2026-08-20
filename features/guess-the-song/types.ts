@@ -1,4 +1,4 @@
-export type Phase = "setup" | "playing" | "round-end" | "finished";
+export type Phase = "setup" | "countdown" | "playing" | "round-end" | "finished";
 
 export type AnswerMode = "title" | "artist" | "both";
 
@@ -6,6 +6,11 @@ export const MIN_SONG_ROUNDS = 3;
 export const MAX_SONG_ROUNDS = 15;
 export const MIN_GUESS_DURATION_SECONDS = 30;
 export const MAX_GUESS_DURATION_SECONDS = 90;
+
+// Everyone sees the same 3-2-1 countdown before playback starts, and the same
+// short pause on the solution before the game auto-advances to the next round.
+export const COUNTDOWN_SECONDS = 3;
+export const ROUND_END_PAUSE_SECONDS = 5;
 
 export const DEFAULT_SONG_SETTINGS = {
   totalRounds: 8,
@@ -69,7 +74,9 @@ export interface GuessTheSongState {
   playlistLabel: string | null;
   tracks: SongTrack[];
   roundIndex: number; // 0-based
+  playbackStartAt: number | null; // epoch ms; countdown target / playback start
   roundDeadlineAt: number | null; // epoch ms
+  roundEndAdvanceAt: number | null; // epoch ms; auto-advance out of round-end
   progress: Record<string, PlayerRoundProgress>;
   firstMatchPlayerId: string | null;
   roundPoints: Record<string, number>;
@@ -83,8 +90,10 @@ export interface GuessTheSongView {
   playlistLabel: string | null;
   roundIndex: number;
   effectiveRounds: number; // min(settings.totalRounds, tracks available)
-  previewUrl: string | null; // current round clip (playing + round-end)
+  previewUrl: string | null; // current round clip (countdown + playing + round-end)
+  playbackStartAt: number | null;
   roundDeadlineAt: number | null;
+  roundEndAdvanceAt: number | null;
   myProgress: PlayerRoundProgress;
   matchedPlayerIds: string[]; // players with at least one match this round
   firstMatchPlayerId: string | null;
@@ -98,5 +107,6 @@ export type GuessTheSongIntent =
   | { kind: "update-settings"; settings: Partial<GuessTheSongSettings> } // host, setup
   | { kind: "submit-guess"; guess: string } // playing
   | { kind: "end-round" } // host anytime; anyone after the deadline
-  | { kind: "next-round" } // host, round-end
+  | { kind: "resolve-countdown" } // anyone, after playbackStartAt passes
+  | { kind: "next-round" } // anyone, after roundEndAdvanceAt passes (or host early)
   | { kind: "play-again" }; // host, finished -> setup

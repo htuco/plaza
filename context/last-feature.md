@@ -11,6 +11,47 @@ next.
 
 ## Current
 
+**Feature:** Guess the Song — synchronized countdown & autoplay
+**Status:** done, pending phone QA
+**Date:** 2026-08-21
+
+**Summary**
+- Every round (first round and every subsequent one) now opens with a server-timestamped `countdown` phase (3s, `COUNTDOWN_SECONDS`) instead of the host having to press "start"/"next round" and each player having to press play on their own `<audio controls>` element.
+- New state fields on `GuessTheSongState`/`GuessTheSongView`: `playbackStartAt` (epoch ms — when countdown ends and playback should start) and `roundEndAdvanceAt` (epoch ms — when round-end auto-advances to the next round). Same "server sets a deadline, any client can resolve once it passes" pattern already used for Imposteri's vote deadline.
+- New intents: `resolve-countdown` (anyone, once `playbackStartAt` passes → flips `countdown` to `playing`) and `next-round` is now callable by **anyone** once `roundEndAdvanceAt` passes (previously host-only); host can still press it early to skip the reveal pause.
+- Full round progression is automatic end-to-end: `countdown` → `playing` → (everyone guesses or timer expires) → `round-end` (5s reveal pause, `ROUND_END_PAUSE_SECONDS`) → auto `next-round` → `countdown` → … → `finished`. No more manual "Next round" tap required (host keeps a ghost-button early-skip only).
+- **Autoplay unlock:** mobile browsers block autoplaying audio with sound until a real user gesture happens on the page. Added a persistent banner ("Tap to enable music for this game") shown whenever `!audioUnlocked`; one tap plays+immediately-pauses a silent clip, satisfying the browser's autoplay policy for the rest of the session. State persisted in `localStorage` (`plaza:song-audio-unlocked`) so it survives across rounds/reloads. A fallback "Tap to play" button still appears during `playing` if a client is unlocked-false or autoplay got blocked anyway.
+- The `<audio>` element is now mounted once across `countdown`/`playing`/`round-end` (not remounted per phase) so it doesn't lose its buffered clip; it's visually hidden and has no `controls` (manual scrubbing would desync players since playback is meant to be simultaneous).
+- **Music now stops the instant the round leaves `"playing"`** (round-end, host early end-round, or the next round's countdown) — a bug where the previous round's clip kept playing into the reveal screen is fixed with an effect that pauses+resets `currentTime` whenever `view.phase !== "playing"`.
+- **Guess matching tightened to exact-match only** (after case/diacritic/punctuation normalization) — the previous fuzzy containment logic (`normalizedAnswer.length >= 4 && normalizedGuess.includes(normalizedAnswer)`, plus a loose 0.6 length-ratio branch) was accepting near-misses like "Cirkez" for "Cirke". Multi-word titles still accept a guess that exactly matches just one significant (3+ char) word of the title (e.g. guessing "queen" still credits "Bohemian Rhapsody" by an artist named Queen), but no more typo tolerance at all — confirmed explicitly with the user over the softer alternative (typo-tolerant for longer words).
+- `app/api/rooms/[room]/songs/start/route.ts` now starts the room in `countdown` (not `playing`) with `playbackStartAt` set.
+- Added `song.countdownTitle`, `song.getReady`, `song.autoNextRound`, `song.autoResults`, `song.unlockAudio`, `song.unlockAudioHint`, `song.tapToPlay` translation keys (en + bs), plus bs error strings for the three new reducer errors (`No countdown is running.`, `Countdown is still running.`, `Still showing the answer.`).
+- Added `.plaza-count-pulse` scale-in animation for the 3-2-1 digits in `app/globals.css`, registered in the existing `prefers-reduced-motion` exclusion block.
+- Validated with `./node_modules/.bin/tsc --noEmit` and `./node_modules/.bin/eslint features/guess-the-song components/preferences-provider.tsx "app/api/rooms/[room]/songs/start/route.ts"`.
+
+**Touched**
+- `features/guess-the-song/{types,module,client}.tsx`
+- `app/api/rooms/[room]/songs/start/route.ts`
+- `components/preferences-provider.tsx`
+- `app/globals.css`
+- `context/last-feature.md`
+
+**Decisions**
+- Confirmed directly with the user: audio-unlock via a one-time tap banner (not autoplay-then-fallback-button), full auto-advance through the whole game (not just the countdown), and strict exact-match guessing (not typo-tolerant) — all recorded here since they're non-obvious product calls, not just implementation details.
+- Kept a host-only early-skip button in `round-end` (bypasses `roundEndAdvanceAt`) even though progression is otherwise fully automatic — useful if the table is ready before the 5s pause ends; does not contradict "no manual button needed" since it's optional, not required.
+- `previewUrl` is now exposed to the client during `countdown` too (not just `playing`/`round-end`) so the clip can preload without revealing title/artist (`reveal` stays null until `round-end`).
+
+**Open / Next**
+- **Phone QA needed**: verify two+ phones actually start the clip at the same instant after the countdown, that the unlock banner tap reliably satisfies iOS Safari's autoplay policy across rounds, and that music stops immediately on round-end.
+- If the unlock-tap still gets blocked on some browsers even after a real gesture, consider muting+autoplaying (allowed without a gesture) and unmuting on the unlock tap instead.
+- Refresh `context/project-overview.md`'s game table to match the live registry (still stale, flagged in a prior feature).
+
+---
+
+## History
+
+### 2026-08-20 - Higher or Lower — new game module
+
 **Feature:** Higher or Lower — new game module
 **Status:** done
 **Date:** 2026-08-20
