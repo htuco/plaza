@@ -8,6 +8,7 @@ import { usePreferences } from "@/components/preferences-provider";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
 import {
+  COUNTDOWN_SECONDS,
   MAX_GUESS_DURATION_SECONDS,
   MAX_SONG_ROUNDS,
   MIN_GUESS_DURATION_SECONDS,
@@ -17,6 +18,7 @@ import {
 import type { AnswerMode, GuessTheSongIntent, GuessTheSongView } from "./types";
 
 const GAME_ID = "guess-the-song";
+const AUDIO_UNLOCKED_KEY = "plaza:song-audio-unlocked";
 
 type PlayerSummary = {
   id: string;
@@ -88,8 +90,40 @@ export function GuessTheSongClient({
   const [selectedPreset, setSelectedPreset] = useState<string | null>(SONG_SOURCE_PRESETS[0].id);
   const [customQuery, setCustomQuery] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const [audioUnlocked, setAudioUnlocked] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(AUDIO_UNLOCKED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const endRoundAttempted = useRef<number | null>(null);
+  const countdownAttempted = useRef<number | null>(null);
+  const nextRoundAttempted = useRef<number | null>(null);
+  const playbackStartedAt = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // One real tap plays+immediately pauses a silent clip, which satisfies mobile
+  // autoplay policies for the rest of the session so later rounds can autoplay.
+  const unlockAudio = useCallback(() => {
+    setAudioUnlocked(true);
+    try {
+      window.localStorage.setItem(AUDIO_UNLOCKED_KEY, "1");
+    } catch {
+      // ignore
+    }
+    const audio = audioRef.current;
+    if (!audio) return;
+    const playAttempt = audio.play();
+    if (playAttempt && typeof playAttempt.then === "function") {
+      playAttempt
+        .then(() => audio.pause())
+        .catch(() => {
+          // Autoplay was blocked; playback will retry from the countdown timestamp.
+        });
+    }
+  }, []);
 
   const loadState = useCallback(async () => {
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/state`, {
@@ -210,14 +244,23 @@ export function GuessTheSongClient({
   const view = snapshot?.view ?? null;
 
   useEffect(() => {
-    if (view?.phase !== "playing" || view.roundDeadlineAt === null) return;
+    const ticking =
+      (view?.phase === "playing" && view.roundDeadlineAt !== null) ||
+      (view?.phase === "countdown" && view.playbackStartAt !== null) ||
+      (view?.phase === "round-end" && view.roundEndAdvanceAt !== null);
+    if (!ticking) return;
     const interval = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(interval);
-  }, [view?.phase, view?.roundDeadlineAt]);
+  }, [view?.phase, view?.roundDeadlineAt, view?.playbackStartAt, view?.roundEndAdvanceAt]);
 
   const remainingMs =
     view?.phase === "playing" && view.roundDeadlineAt !== null
       ? Math.max(0, view.roundDeadlineAt - now)
+      : null;
+
+  const countdownRemainingMs =
+    view?.phase === "countdown" && view.playbackStartAt !== null
+      ? Math.max(0, view.playbackStartAt - now)
       : null;
 
   // Past the deadline, any client may ask the server to close the round.
@@ -229,12 +272,54 @@ export function GuessTheSongClient({
     void sendIntent({ kind: "end-round" });
   }, [remainingMs, sendIntent, view]);
 
-  // Restart playback when a new round's clip arrives.
+  // Once the shared countdown timestamp passes, flip the room into "playing".
+  useEffect(() => {
+    if (!view || view.phase !== "countdown" || view.playbackStartAt === null) return;
+    if (countdownRemainingMs === null || countdownRemainingMs > 0) return;
+    if (countdownAttempted.current === view.playbackStartAt) return;
+    countdownAttempted.current = view.playbackStartAt;
+    void sendIntent({ kind: "resolve-countdown" });
+  }, [countdownRemainingMs, sendIntent, view]);
+
+  // After the round-end pause, the game advances itself — no host tap needed.
+  useEffect(() => {
+    if (!view || view.phase !== "round-end" || view.roundEndAdvanceAt === null) return;
+    if (now < view.roundEndAdvanceAt) return;
+    if (nextRoundAttempted.current === view.roundEndAdvanceAt) return;
+    nextRoundAttempted.current = view.roundEndAdvanceAt;
+    void sendIntent({ kind: "next-round" });
+  }, [now, sendIntent, view]);
+
+  // Load the clip during the countdown, then fire playback exactly at
+  // playbackStartAt so every unlocked device starts the same instant.
   const previewUrl = view?.previewUrl ?? null;
   useEffect(() => {
     if (!previewUrl || !audioRef.current) return;
     audioRef.current.load();
+    playbackStartedAt.current = null;
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (view?.phase !== "playing" || !previewUrl || !audioRef.current) return;
+    if (!audioUnlocked) return;
+    if (playbackStartedAt.current === view.playbackStartAt) return;
+    playbackStartedAt.current = view.playbackStartAt;
+    const audio = audioRef.current;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      // Blocked despite the earlier unlock tap; the visible play control still works.
+    });
+  }, [audioUnlocked, previewUrl, view?.phase, view?.playbackStartAt]);
+
+  // Cut the clip the instant the round stops being "playing" (round-end,
+  // host end-round, next round's countdown) so it never bleeds into review.
+  useEffect(() => {
+    if (view?.phase === "playing") return;
+    const audio = audioRef.current;
+    if (!audio || audio.paused) return;
+    audio.pause();
+    audio.currentTime = 0;
+  }, [view?.phase]);
 
   const playersById = useMemo(
     () => new Map(snapshot?.players.map((player) => [player.id, player]) ?? []),
@@ -262,6 +347,8 @@ export function GuessTheSongClient({
   }
 
   const secondsLeft = remainingMs !== null ? Math.ceil(remainingMs / 1000) : null;
+  const countdownSecondsLeft =
+    countdownRemainingMs !== null ? Math.ceil(countdownRemainingMs / 1000) : null;
   const modeDone =
     view.settings.answerMode === "title"
       ? view.myProgress.titleMatched
@@ -319,6 +406,7 @@ export function GuessTheSongClient({
               </p>
               <h2 className="truncate text-lg font-semibold">
                 {view.phase === "setup" && t("song.setupTitle")}
+                {view.phase === "countdown" && t("song.countdownTitle")}
                 {view.phase === "playing" && t("song.playingTitle")}
                 {view.phase === "round-end" && t("song.roundEndTitle")}
                 {view.phase === "finished" && t("song.finishedTitle")}
@@ -333,6 +421,16 @@ export function GuessTheSongClient({
         </div>
 
         {error && <div className="plaza-error border-b px-4 py-3 text-sm">{error}</div>}
+
+        {!audioUnlocked && view.phase !== "finished" && (
+          <button
+            type="button"
+            onClick={unlockAudio}
+            className="plaza-status-valid flex w-full items-center justify-center gap-2 border-b px-4 py-3 text-sm font-semibold"
+          >
+            ♪ {t("song.unlockAudio")}
+          </button>
+        )}
 
         {/* ------------------------------------------------ setup */}
         {view.phase === "setup" && (
@@ -445,6 +543,33 @@ export function GuessTheSongClient({
           </div>
         )}
 
+        {/* Mounted once across countdown/playing/round-end so the same element
+            keeps buffering + playing without remounting between phases. */}
+        {previewUrl &&
+          (view.phase === "countdown" ||
+            view.phase === "playing" ||
+            view.phase === "round-end") && (
+            <audio ref={audioRef} preload="auto" className="hidden" src={previewUrl} />
+          )}
+
+        {/* ------------------------------------------------ countdown */}
+        {view.phase === "countdown" && (
+          <div className="grid gap-6 p-4 py-10 text-center">
+            <p className="plaza-muted text-sm">{t("song.getReady")}</p>
+            <p
+              key={countdownSecondsLeft ?? COUNTDOWN_SECONDS}
+              className="plaza-count-pulse font-mono text-6xl font-bold tabular-nums"
+              role="timer"
+              aria-live="polite"
+            >
+              {countdownSecondsLeft ?? COUNTDOWN_SECONDS}
+            </p>
+            {!audioUnlocked && (
+              <p className="plaza-muted text-xs">{t("song.unlockAudioHint")}</p>
+            )}
+          </div>
+        )}
+
         {/* ------------------------------------------------ playing / round-end */}
         {(view.phase === "playing" || view.phase === "round-end") && (
           <div className="grid gap-4 p-4">
@@ -489,14 +614,20 @@ export function GuessTheSongClient({
                 )}
               </div>
               <Equalizer active={view.phase === "playing"} />
-              {previewUrl && (
-                <audio
-                  ref={audioRef}
-                  controls
-                  preload="auto"
-                  className="plaza-audio mt-4 w-full"
-                  src={previewUrl}
-                />
+              {view.phase === "playing" && !audioUnlocked && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    unlockAudio();
+                    const audio = audioRef.current;
+                    if (!audio) return;
+                    audio.currentTime = 0;
+                    void audio.play().catch(() => {});
+                  }}
+                  className="plaza-button mt-4 h-11 w-full rounded-xl text-sm font-semibold"
+                >
+                  ▶ {t("song.tapToPlay")}
+                </button>
               )}
             </div>
 
@@ -568,19 +699,22 @@ export function GuessTheSongClient({
                     )}
                   </p>
                 )}
-                {view.isHost ? (
+                <p className="plaza-muted text-center text-xs">
+                  {view.roundIndex + 1 >= view.effectiveRounds
+                    ? t("song.autoResults")
+                    : t("song.autoNextRound")}
+                </p>
+                {view.isHost && (
                   <button
                     type="button"
                     disabled={isSending}
                     onClick={() => void actionIntent({ kind: "next-round" })}
-                    className="plaza-button h-12 rounded-xl text-base font-semibold disabled:opacity-50"
+                    className="plaza-ghost-button h-10 rounded-lg text-sm font-medium disabled:opacity-50"
                   >
                     {view.roundIndex + 1 >= view.effectiveRounds
                       ? t("song.showResults")
                       : t("song.nextRound")}
                   </button>
-                ) : (
-                  <p className="plaza-muted text-center text-xs">{t("gradovi.waitingForHost")}</p>
                 )}
               </>
             )}

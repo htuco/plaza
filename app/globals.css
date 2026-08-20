@@ -3072,7 +3072,8 @@ body.plaza-time-warning::before {
   .plaza-player-pill,
   .plaza-turn-intro,
   .plaza-seat-ghost__avatar,
-  .plaza-scroll-hint::after {
+  .plaza-scroll-hint::after,
+  .plaza-count-pulse {
     animation: none;
   }
 
@@ -3944,6 +3945,21 @@ body.plaza-time-warning::before {
   }
   to {
     transform: scaleY(var(--eq-max, 1));
+  }
+}
+
+.plaza-count-pulse {
+  animation: plaza-count-pulse-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes plaza-count-pulse-in {
+  from {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
