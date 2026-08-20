@@ -11,6 +11,10 @@ This repo is currently **docs-only** — no application code has been scaffolded
 - [context/terms-of-reference.md](context/terms-of-reference.md) — glossary, conventions, **decision log** (§5)
 - [context/git-workflow.md](context/git-workflow.md) — branches, Conventional Commits, PR template
 - [context/last-feature.md](context/last-feature.md) — rolling log of the most recently completed feature; update at end of each feature
+- [context/coding-standards.md](context/coding-standards.md) — TS/Next/Tailwind rules, redaction rules, file organization
+- [context/ai-interaction.md](context/ai-interaction.md) — how Claude works here: the feature loop, commit rules, review focus
+- [context/current-feature.md](context/current-feature.md) — the single active feature, driven by `/feature`
+- [context/features/](context/features/) — one spec per planned feature/fix; `/feature load` reads from here
 
 If a chat instruction conflicts with `context/`, flag it before proceeding. If a non-trivial decision is made mid-build, record it in `terms-of-reference.md` §5 with the date.
 
@@ -101,6 +105,44 @@ Three environments: local → Vercel Preview (per-branch) → Production.
 - Types: `feat | fix | refactor | chore | docs | style | test | perf | build | ci`.
 - Scopes: `imposteri | asocijacije | gradovi | guess-the-song | hub | rooms | realtime | db | spotify | auth`.
 - PR title mirrors commit summary; fill the PR template in [context/git-workflow.md](context/git-workflow.md). Verify the Vercel Preview before merge.
+
+## AI workflow tooling
+
+Imported from [ai-workflow-kit](https://github.com/htuco/ai-workflow-kit). The core loop:
+
+```
+write a spec in context/features/  →  /feature load <spec>  →  /feature start  →  build
+                                   →  /feature review       →  /feature complete   # branch + PR
+```
+
+**Skills** (`.claude/skills/`)
+
+| Skill | Does |
+| ----- | ---- |
+| `/feature load\|start\|review\|explain\|test\|complete` | The feature lifecycle, spec → PR |
+| `/cleanup check\|run` | Housekeeping audit (stale TODOs, console.log, drifted context files) |
+| `/list-components` | Inventory of `components/` and `features/<game>/` components |
+| `/research <prompt-name>` | Run a research prompt from `context/research/`, docs only, no code changes |
+| `/import-workflow` | Re-run or update this kit import |
+
+**Subagents** (`.claude/agents/`)
+
+| Agent | Does |
+| ----- | ---- |
+| `code-scanner` | Security / performance / quality scan, including server-authority and redaction checks |
+| `refactor-scanner` | DRY / duplication audit with extraction suggestions |
+| `ui-reviewer` | Visual, responsive, and a11y review via Playwright |
+| `auth-auditor` | Supabase auth, RLS, and per-player redaction audit |
+
+Scaffold a new subagent from `.claude/agent-templates/_new-subagent.template.md`.
+
+**`/feature complete` opens a PR — it does not merge to `main`.** The kit ships with a
+merge-to-main flow; it was adapted to this repo's no-exceptions PR rule.
+
+**MCP** (`.mcp.json`): `context7` (live library docs) and `playwright` (drives `ui-reviewer`).
+`.mcp.json` is committed and holds a `${CONTEXT7_API_KEY}` placeholder — **never a real key**.
+The actual key lives in `.claude/settings.local.json` (gitignored) under `env`, which is where
+any future secret belongs. New machine: copy the key there, or export `CONTEXT7_API_KEY` in your shell.
 
 ## Out of scope (v1)
 
