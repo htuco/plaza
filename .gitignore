@@ -12,12 +12,16 @@
 !.yarn/versions
 
 # local agent/editor caches
-/.claude
 /.venv
 
-# internal spec / scratch docs (kept local only)
-/context
-/CLAUDE.md
+# AI workflow: config + skills are committed, local caches/scratch are not
+/.claude/*
+!/.claude/settings.json
+!/.claude/agents/
+!/.claude/commands/
+!/.claude/hooks/
+!/.claude/skills/
+/.claude/settings.local.json
 
 # testing
 /coverage
