@@ -78,6 +78,14 @@ export const GAMES: readonly GameMeta[] = [
     maxPlayers: 12,
     availability: "playable",
   },
+  {
+    id: "higher-lower",
+    displayName: "Veće ili Manje",
+    tagline: "Guess higher or lower before you're wrong.",
+    minPlayers: 1,
+    maxPlayers: 8,
+    availability: "playable",
+  },
 ] as const;
 
 export function getGameMeta(id: GameId): GameMeta | undefined {

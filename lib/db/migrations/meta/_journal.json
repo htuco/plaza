@@ -29,6 +29,13 @@
       "when": 1781165747498,
       "tag": "0003_safe_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787242548925,
+      "tag": "0004_dashing_strong_guy",
+      "breakpoints": true
     }
   ]
 }
