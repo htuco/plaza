@@ -6,12 +6,22 @@ Conventions for branches, commits, and pull requests. Follow these exactly.
 
 ## Branching
 
-- `main` — always deployable; Vercel **Production** tracks it.
-- Feature branches off `main`, one feature/game change per branch.
+**The rule, no exceptions: every change lands on `main` through a pull request.**
+
+- **Never commit or push directly to `main`.** Not for a typo, not for a one-line
+  copy tweak, not for docs. No change is too small to skip the branch + PR.
+- Every change starts a branch off `main` — `feat/*` for new work, `fix/*` for
+  repairs, and the other Conventional Commit types for everything else
+  (`chore/*`, `docs/*`, `refactor/*`, …).
+- One logical change per branch, and one PR per branch. If a branch grows a
+  second unrelated change, split it.
+- `main` — always deployable; Vercel **Production** tracks it. It only ever moves
+  by merging a PR.
 - Branch naming: `type/short-scope`
   - `feat/imposteri-vote-phase`
   - `fix/gradovi-timer-reset`
   - `chore/drizzle-migration-setup`
+  - `docs/pr-workflow-rule`
 
 Every push to a branch gets a Vercel **Preview** deployment; verify there before merge.
 
@@ -53,9 +63,14 @@ Redact server-side state into a per-player view before broadcasting.
 
 ## Pull requests
 
+- **Every branch gets a PR, and every PR targets `main`.** A PR for a two-line
+  fix is normal and expected — the PR is the review and QA surface, so skipping
+  it is what costs time, not opening it.
 - Title: same Conventional Commits style as the commit summary.
 - Fill the PR template below. Keep PRs scoped to one feature/game.
 - A PR must build and pass checks, and its Preview deployment must work.
+- Open the PR as soon as the branch has its first commit; it is fine for a PR to
+  sit in draft while work continues.
 
 ### PR template
 

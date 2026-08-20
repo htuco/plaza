@@ -97,6 +97,7 @@ Record each resolved decision with date + short rationale. Newest on top.
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-08-20 | Every change ships via a `feat/*`/`fix/*` (or typed) branch and a PR into `main`; no direct commits to `main`, no matter how small | The PR + Vercel Preview is the only QA surface in a vibe-coded build where the human does not review line by line |
 | 2026-05-24 | Game-state broadcasts are invalidation-only; clients fetch per-player redacted views via API | Supabase room broadcasts are shared, so private answers/roles must not be embedded in one broadcast payload |
 | 2026-05-24 | App name finalized: **Plaza** | resolved during scaffold; replaced working title "Lobby" |
 | 2026-05-23 | UI: **shadcn/ui** + Tailwind on Next.js/React | requested; fast, clean, mobile-friendly components |

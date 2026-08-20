@@ -94,7 +94,9 @@ Three environments: local → Vercel Preview (per-branch) → Production.
 
 ## Git workflow
 
-- Branch off `main` as `type/short-scope` (e.g. `feat/imposteri-vote-phase`, `fix/gradovi-timer-reset`).
+- **Every change — feature, fix, or one-line tweak — goes on its own branch and reaches `main` through a PR. Never commit or push directly to `main`.** No change is too small to skip the branch + PR; open a PR for every one.
+- Branch off `main` as `type/short-scope` (e.g. `feat/imposteri-vote-phase`, `fix/gradovi-timer-reset`). New work → `feat/*`, repairs → `fix/*`, everything else takes its Conventional Commit type (`chore/*`, `docs/*`, …).
+- One logical change per branch, one PR per branch, PR always targets `main`.
 - **Conventional Commits**, lowercase, no trailing period. Summary = what; body = **why** (not how).
 - Types: `feat | fix | refactor | chore | docs | style | test | perf | build | ci`.
 - Scopes: `imposteri | asocijacije | gradovi | guess-the-song | hub | rooms | realtime | db | spotify | auth`.
