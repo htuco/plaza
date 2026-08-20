@@ -37,6 +37,7 @@ const GAME_TILE_TONES: Record<GameId, string> = {
   "gradovi-i-sela": "plaza-game-card--paper",
   asocijacije: "plaza-game-card--puzzle",
   "guess-the-song": "plaza-game-card--music",
+  "higher-lower": "plaza-game-card--chart",
 };
 
 export function RoomLobby({ room, me }: { room: RoomRow; me: PlayerRow | null }) {

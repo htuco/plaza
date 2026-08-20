@@ -1140,6 +1140,10 @@ h3,
   --game-tone: #b98ae6;
 }
 
+.plaza-game-card--chart {
+  --game-tone: #5fbf8f;
+}
+
 .plaza-player-badge {
   border: 1px solid color-mix(in srgb, var(--game-tone, var(--plaza-accent)) 38%, transparent);
   background: color-mix(in srgb, var(--game-tone, var(--plaza-accent)) 14%, transparent);

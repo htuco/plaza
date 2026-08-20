@@ -323,6 +323,27 @@ const translations: Record<LanguagePreference, Record<string, TranslationEntry>>
     "song.showResults": "Show final results",
     "song.matched": "got it",
     "song.finalScore": (points) => `${points} points`,
+    "higherLower.phase.setup": "Setup",
+    "higherLower.phase.finished": "Finished",
+    "higherLower.category.internet": "Internet & pop culture",
+    "higherLower.category.trivia": "General trivia",
+    "higherLower.category.regional": "Regional",
+    "higherLower.setupTitle": "Higher or Lower",
+    "higherLower.playingTitle": "Guess higher or lower",
+    "higherLower.finishedTitle": "Round over",
+    "higherLower.rulesHint": "One shared category, one shuffled list. Guess whether the next item is higher or lower — everyone plays their own chain at the same time.",
+    "higherLower.startGame": "Start game",
+    "higherLower.waitingForSetup": "Waiting for the host to start...",
+    "higherLower.current": "Current",
+    "higherLower.next": "Next",
+    "higherLower.higher": "Higher",
+    "higherLower.lower": "Lower",
+    "higherLower.chainLength": (position) => `Chain: ${position}`,
+    "higherLower.youAreOut": "You're out!",
+    "higherLower.finalChainLength": (position) => `You reached a chain of ${position}.`,
+    "higherLower.out": "out",
+    "higherLower.scoreboard": "Scoreboard",
+    "higherLower.winner": "Winner",
     "gradovi.filled": (filled, total) => `${filled}/${total} filled`,
     "gradovi.winner": "Winner",
     "error.generic": "Something went wrong.",
@@ -621,6 +642,27 @@ const translations: Record<LanguagePreference, Record<string, TranslationEntry>>
     "song.showResults": "Prikaži konačni rezultat",
     "song.matched": "pogodio/la",
     "song.finalScore": (points) => `${points} bodova`,
+    "higherLower.phase.setup": "Priprema",
+    "higherLower.phase.finished": "Kraj",
+    "higherLower.category.internet": "Internet i pop kultura",
+    "higherLower.category.trivia": "Opća znanja",
+    "higherLower.category.regional": "Regija",
+    "higherLower.setupTitle": "Veće ili Manje",
+    "higherLower.playingTitle": "Pogodi veće ili manje",
+    "higherLower.finishedTitle": "Runda gotova",
+    "higherLower.rulesHint": "Jedna zajednička kategorija, jedan izmiješani niz. Pogodi da li je sljedeća stavka veća ili manja — svako igra svoj lanac istovremeno.",
+    "higherLower.startGame": "Pokreni igru",
+    "higherLower.waitingForSetup": "Čekamo da host pokrene igru...",
+    "higherLower.current": "Trenutno",
+    "higherLower.next": "Sljedeće",
+    "higherLower.higher": "Veće",
+    "higherLower.lower": "Manje",
+    "higherLower.chainLength": (position) => `Lanac: ${position}`,
+    "higherLower.youAreOut": "Ispao/la si!",
+    "higherLower.finalChainLength": (position) => `Dosegao/la si lanac od ${position}.`,
+    "higherLower.out": "ispao/la",
+    "higherLower.scoreboard": "Rezultati",
+    "higherLower.winner": "Pobjednik",
     "gradovi.filled": (filled, total) => `${filled}/${total} popunjeno`,
     "gradovi.winner": "Pobjednik",
     "error.generic": "Nešto je pošlo po zlu.",
@@ -649,6 +691,10 @@ const gameCopies: Record<LanguagePreference, Record<GameId, GameCopy>> = {
       displayName: "Alias",
       tagline: "Explain the word — just never say it.",
     },
+    "higher-lower": {
+      displayName: "Higher or Lower",
+      tagline: "Guess higher or lower before you're wrong.",
+    },
   },
   bs: {
     imposteri: {
@@ -670,6 +716,10 @@ const gameCopies: Record<LanguagePreference, Record<GameId, GameCopy>> = {
     alias: {
       displayName: "Alias",
       tagline: "Objasni riječ — samo je nemoj izgovoriti.",
+    },
+    "higher-lower": {
+      displayName: "Veće ili Manje",
+      tagline: "Pogodi veće ili manje prije nego što pogriješiš.",
     },
   },
 };
@@ -724,6 +774,16 @@ const gameDetails: Record<LanguagePreference, Record<GameId, GameDetails>> = {
       example:
         "The word is 'guitar'. You say: an instrument with six strings you play around a campfire. Your team shouts 'guitar' — +1, next word!",
     },
+    "higher-lower": {
+      rules: [
+        "A category is picked and its items are shuffled into a hidden list.",
+        "You see the current item's value; guess whether the next one is higher or lower.",
+        "A correct guess extends your own chain; a wrong guess ends your run.",
+        "Everyone plays the same list independently — the longest chain wins.",
+      ],
+      example:
+        "Current: MrBeast — 400,000,000 subscribers. Next: PewDiePie. Guess lower — correct! Your chain grows to 2.",
+    },
   },
   bs: {
     imposteri: {
@@ -773,6 +833,16 @@ const gameDetails: Record<LanguagePreference, Record<GameId, GameDetails>> = {
       ],
       example:
         "Riječ je 'gitara'. Kažeš: instrument sa šest žica koji se svira kraj logorske vatre. Tim vikne 'gitara' — +1, sljedeća riječ!",
+    },
+    "higher-lower": {
+      rules: [
+        "Izabere se kategorija, a njene stavke se izmiješaju u skriveni niz.",
+        "Vidiš vrijednost trenutne stavke; pogodi da li je sljedeća veća ili manja.",
+        "Tačan pogodak produžava tvoj lanac; netačan pogodak završava tvoju rundu.",
+        "Svako igra isti niz nezavisno — pobjeđuje najduži lanac.",
+      ],
+      example:
+        "Trenutno: MrBeast — 400.000.000 pretplatnika. Sljedeće: PewDiePie. Pogodiš manje — tačno! Tvoj lanac raste na 2.",
     },
   },
 };
@@ -855,6 +925,8 @@ const localizedErrors: Record<LanguagePreference, Record<string, string>> = {
     "Wrong guess.": "Netačno.",
     "Board is already solved.": "Tabla je već riješena.",
     "Game is not running.": "Igra nije u toku.",
+    "You are already out this round.": "Već si ispao/la ove runde.",
+    "Invalid Higher or Lower action.": "Neispravna Veće ili Manje akcija.",
     "Only the host can reveal the board.": "Samo host može otkriti tablu.",
     "Invalid Guess the Song action.": "Neispravna Pogodi pjesmu akcija.",
     "Round is not running.": "Runda nije u toku.",

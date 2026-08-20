@@ -7,4 +7,5 @@ export const GAME_ICONS: Record<GameId, string> = {
   "gradovi-i-sela": "✍️",
   asocijacije: "🧩",
   "guess-the-song": "🎧",
+  "higher-lower": "📈",
 };

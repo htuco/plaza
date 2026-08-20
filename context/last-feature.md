@@ -1,6 +1,3 @@
-opet dobijam labele samo iznad tabele gdje pise Igra pocinje, igra zavrsava, uradi na isti fazon kao sto si 
-![alt text](image.png)
-
 # Last Feature
 
 Rolling log of the **most recently completed feature**, so Claude Code has fresh
@@ -13,6 +10,49 @@ next.
 ---
 
 ## Current
+
+**Feature:** Higher or Lower — new game module
+**Status:** done
+**Date:** 2026-08-20
+
+**Summary**
+- Added a sixth game to the registry: **Higher or Lower** (`higher-lower`, display name "Veće ili Manje"). Guess whether the next item's value is higher or lower than the current one; a wrong guess ends that player's run.
+- Content is a curated static deck (`features/higher-lower/items.ts`) — no live API, matching the "vibe coded" philosophy and Asocijacije's/Alias's content pattern. Three categories: `internet` (YouTuber/streamer subscribers, social follower counts, song streams, movie box office), `trivia` (country/city population, animal facts, historical years, mountains/rivers), `regional` (Balkan-relevant population/geography/history). ~16 items per category.
+- Core mechanic: every player in the room plays the **same shuffled item sequence independently and simultaneously** — no turn-passing. Each player's `position` (chain length) and `alive` flag are tracked per-player; a wrong guess freezes that player's score. Round ends when everyone is out. This single mechanic supports solo play (`minPlayers: 1`) and any group size/1v1 without a turn-order special case.
+- Redaction: each player's view only ever shows their own confirmed chain (values) plus the next item's label with no value — never the value of an item they haven't personally guessed on yet.
+- New module follows the established `GameModule` contract exactly (`initialState`/`reduce`/`redact`/`ClientComponent`), reusing the `normalizeState`/`isXIntent` guard pattern from `asocijacije/module.ts` and the client fetch/intent/realtime plumbing from `alias/client.tsx`.
+- Wired into every registration point: `lib/db/schema.ts` (`GAME_IDS` + generated migration for the `game_id` enum), `features/registry.ts`, `features/index.ts`, `components/game-icons.tsx`, `components/preferences-provider.tsx` (en/bs `gameCopies`, `gameDetails`, UI strings, error strings), and all four `Record<GameId, string>` tone maps (`app/play/[room]/room-lobby.tsx`, `app/page.tsx`, `components/landing/game-card-deck.tsx`, `components/landing/live-table-tray.tsx`) plus a new `plaza-game-card--chart` tone in `app/globals.css`.
+- Validated with `./node_modules/.bin/tsc --noEmit` and `./node_modules/.bin/eslint` across all touched files.
+- Cleaned two stray leftover lines that had landed at the very top of this file (a note and an orphaned image reference, unrelated to any feature).
+
+**Touched**
+- `features/higher-lower/{types,items,module,client}.tsx` (new)
+- `lib/db/schema.ts`, `lib/db/migrations/0004_dashing_strong_guy.sql`
+- `features/registry.ts`, `features/index.ts`
+- `components/game-icons.tsx`, `components/preferences-provider.tsx`
+- `app/play/[room]/room-lobby.tsx`, `app/page.tsx`
+- `components/landing/{game-card-deck,live-table-tray}.tsx`
+- `app/globals.css`
+- `context/{terms-of-reference,last-feature}.md`
+
+**Decisions**
+- Simultaneous independent chains over classic alternating turns — confirmed with the user directly; keeps solo and group play on one mechanic with no waiting on other players' turns.
+- Static curated deck, no live API (YouTube Data API, Spotify streams, etc.) — ruled out explicitly to keep v1 offline-safe and avoid new API keys/quota; values are intentionally rounded so the deck doesn't need constant upkeep.
+- Random category per game start (like Gradovi's random letter), no host-configurable category picker in v1 — same upgrade path Alias/Gradovi used for settings, left for later if wanted.
+- No new DB content table — the deck is small enough to live in a TS file (`items.ts`), same as Alias's `words.ts`, not seeded/DB-backed like Asocijacije's boards.
+- Flagged (not fixed) that `context/project-overview.md`'s four-game table is stale vs. the live registry, which already had five games before this change; logged in `terms-of-reference.md` §5 rather than blocking this feature on an unrelated docs refresh.
+
+**Open / Next**
+- Refresh `context/project-overview.md`'s game table to match the live registry (now six games).
+- Consider a host-configurable category picker for Higher or Lower once the random-category version has been played a few times.
+- Run `pnpm drizzle-kit migrate` against a real Supabase project, then verify the Vercel Preview for `feat/higher-lower`.
+- Test on two phones: does watching your own "you're out" state while others keep playing feel good, or does it want a shared live leaderboard update (currently only refreshes on your own guesses/realtime invalidation)?
+
+---
+
+## History
+
+### 2026-05-25 - Imposteri offline-clues rework
 
 **Feature:** Imposteri offline-clues rework
 **Status:** done

@@ -47,6 +47,15 @@ here. This is also the **decision log** — record resolved open decisions here.
   animal, name...) starting with that letter. Unique valid answers score highest.
 - **Guess the Song** — name-that-tune: a snippet plays (via Spotify) and players
   race to identify the title/artist.
+- **Alias** — a team word-guessing game. One player explains a word to their
+  teammates without saying the word (or its root); correct guesses score, turns
+  rotate, highest score after all rounds wins.
+- **Higher or Lower** — a chain-guessing trivia game. A category (internet/pop
+  culture, general trivia, or regional) is picked and its items shuffled into a
+  hidden order; each player independently guesses whether the next item's value
+  is higher or lower than the current one. A wrong guess ends that player's run;
+  score is the chain length reached. Everyone plays the same shuffled sequence
+  simultaneously, so it supports solo play or any group size without turns.
 
 ## 3. Conventions
 
@@ -97,6 +106,8 @@ Record each resolved decision with date + short rationale. Newest on top.
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-08-20 | Added a sixth game, **Higher or Lower**: curated static item deck (no live API), everyone plays the same shuffled chain independently and simultaneously (no turn-passing), score = chain length reached | Supports solo play and any group size with one mechanic; static deck matches Asocijacije's/Alias's "vibe coded" content pattern and needs no new integration |
+| 2026-08-20 | `context/project-overview.md`'s game table (four games) is stale vs. the live registry (`features/registry.ts`), which already has five games (`imposteri`, `alias`, `gradovi-i-sela`, `asocijacije`, `guess-the-song`) before this change, now six with Higher or Lower | Flagging so `project-overview.md` gets refreshed in a follow-up; not blocking this feature on an unrelated docs fix |
 | 2026-08-20 | Every change ships via a `feat/*`/`fix/*` (or typed) branch and a PR into `main`; no direct commits to `main`, no matter how small | The PR + Vercel Preview is the only QA surface in a vibe-coded build where the human does not review line by line |
 | 2026-05-24 | Game-state broadcasts are invalidation-only; clients fetch per-player redacted views via API | Supabase room broadcasts are shared, so private answers/roles must not be embedded in one broadcast payload |
 | 2026-05-24 | App name finalized: **Plaza** | resolved during scaffold; replaced working title "Lobby" |
