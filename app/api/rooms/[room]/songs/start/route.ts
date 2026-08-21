@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getGameModule } from "@/features";
-import { normalizeSongState } from "@/features/guess-the-song/module";
+import { normalizeSongState, pickClipStart } from "@/features/guess-the-song/module";
 import { COUNTDOWN_SECONDS, SONG_SOURCE_PRESETS } from "@/features/guess-the-song/types";
 import type { GuessTheSongState } from "@/features/guess-the-song/types";
 import { collectTracksForTerms } from "@/lib/music/itunes";
@@ -90,6 +90,7 @@ export async function POST(
       playlistLabel: label,
       tracks: tracks.slice(0, Math.max(current.settings.totalRounds, 3)),
       roundIndex: 0,
+      clipStartSeconds: pickClipStart(current.settings.clipLengthSeconds),
       playbackStartAt: now + COUNTDOWN_SECONDS * 1000,
       roundDeadlineAt: null,
       roundEndAdvanceAt: null,

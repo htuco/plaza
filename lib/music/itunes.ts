@@ -11,47 +11,76 @@ export interface ItunesTrack {
   artworkUrl: string | null;
 }
 
-type ItunesSearchResult = {
-  results?: Array<{
-    trackId?: number;
-    trackName?: string;
-    artistName?: string;
-    previewUrl?: string;
-    artworkUrl100?: string;
-  }>;
+type ItunesResultEntry = {
+  wrapperType?: string;
+  artistId?: number;
+  artistName?: string;
+  trackId?: number;
+  trackName?: string;
+  previewUrl?: string;
+  artworkUrl100?: string;
 };
 
-export async function searchItunesTracks(term: string, limit = 25): Promise<ItunesTrack[]> {
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=${limit}`;
+type ItunesResponse = {
+  results?: ItunesResultEntry[];
+};
+
+// iTunes responses are cacheable; avoid hammering the API for repeated setups.
+async function fetchItunes(url: string): Promise<ItunesResultEntry[]> {
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
-    // iTunes responses are cacheable; avoid hammering the API for repeated setups.
     next: { revalidate: 60 * 60 },
   });
   if (!response.ok) return [];
+  const data = (await response.json()) as ItunesResponse;
+  return data.results ?? [];
+}
 
-  const data = (await response.json()) as ItunesSearchResult;
+function toTrack(entry: ItunesResultEntry): ItunesTrack | null {
+  if (
+    typeof entry.trackId !== "number" ||
+    typeof entry.trackName !== "string" ||
+    typeof entry.artistName !== "string" ||
+    typeof entry.previewUrl !== "string" ||
+    entry.previewUrl.length === 0
+  ) {
+    return null;
+  }
+  return {
+    trackId: String(entry.trackId),
+    title: entry.trackName,
+    artist: entry.artistName,
+    previewUrl: entry.previewUrl,
+    artworkUrl:
+      typeof entry.artworkUrl100 === "string"
+        ? entry.artworkUrl100.replace("100x100", "300x300")
+        : null,
+  };
+}
+
+// Resolve a search term to a single artist. `attribute=artistTerm` is ignored by
+// the search endpoint (it still matches song titles), so the only reliable way
+// to scope a source to one performer is to resolve the artist id first.
+async function resolveArtistId(term: string): Promise<number | null> {
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=musicArtist&limit=1`;
+  const [artist] = await fetchItunes(url);
+  return typeof artist?.artistId === "number" ? artist.artistId : null;
+}
+
+// Every source term is an artist name, so search by artist and take that
+// artist's catalogue. A plain `term=` search would also return songs whose
+// *title* matched the term (searching "Magazin" returned "White Denim — Magazin").
+export async function searchItunesTracks(term: string, limit = 25): Promise<ItunesTrack[]> {
+  const artistId = await resolveArtistId(term);
+  if (artistId === null) return [];
+
+  const url = `https://itunes.apple.com/lookup?id=${artistId}&entity=song&limit=${limit}`;
   const tracks: ItunesTrack[] = [];
-  for (const result of data.results ?? []) {
-    if (
-      typeof result.trackId !== "number" ||
-      typeof result.trackName !== "string" ||
-      typeof result.artistName !== "string" ||
-      typeof result.previewUrl !== "string" ||
-      result.previewUrl.length === 0
-    ) {
-      continue;
-    }
-    tracks.push({
-      trackId: String(result.trackId),
-      title: result.trackName,
-      artist: result.artistName,
-      previewUrl: result.previewUrl,
-      artworkUrl:
-        typeof result.artworkUrl100 === "string"
-          ? result.artworkUrl100.replace("100x100", "300x300")
-          : null,
-    });
+  for (const entry of await fetchItunes(url)) {
+    // The lookup response leads with the artist record itself; keep only tracks.
+    if (entry.wrapperType !== "track") continue;
+    const track = toTrack(entry);
+    if (track) tracks.push(track);
   }
   return tracks;
 }
