@@ -170,7 +170,8 @@ export default function HomePage() {
                 ))}
               </div>
               <div
-                className="plaza-enter"
+                id="join"
+                className="plaza-enter scroll-mt-24"
                 style={{ "--enter-delay": "420ms" } as CSSProperties}
               >
                 <LandingActionCard actionTitle={copy.actionTitle} joinPrompt={copy.joinPrompt} />

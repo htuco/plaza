@@ -2,15 +2,16 @@
 
 import { useFormStatus } from "react-dom";
 
+// The screen's primary action: 56px, full width, one per screen.
 export function SubmitButton({ children }: { children: React.ReactNode }) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
       disabled={pending}
-      className="plaza-button h-11 rounded-lg text-sm font-medium disabled:opacity-60"
+      className="plaza-button rm-cta disabled:opacity-60"
     >
-      {pending ? "..." : children}
+      {pending ? "…" : children}
     </button>
   );
 }

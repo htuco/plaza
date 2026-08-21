@@ -2,25 +2,47 @@
 
 import Link from "next/link";
 import { usePreferences } from "@/components/preferences-provider";
+import { RoomBody, RoomContent, RoomScreen, RoomTopBar } from "@/components/room-shell";
 
+// 09 · Soba ne postoji — the code expired or the host closed the room. Two
+// equal-height actions: start a fresh room, or try another code.
 export default function RoomNotFound() {
   const { t } = usePreferences();
 
   return (
-    <div className="plaza-page flex flex-1 flex-col items-center justify-center px-5 py-16 text-center">
-      <div className="plaza-panel grid w-full max-w-sm justify-items-center gap-2 p-8">
-        <span className="text-4xl" aria-hidden="true">
-          🪑
-        </span>
-        <h1 className="plaza-display mt-2 text-2xl font-extrabold">{t("notFound.title")}</h1>
-        <p className="plaza-muted">{t("notFound.body")}</p>
-        <Link
-          href="/"
-          className="plaza-button mt-4 rounded-xl px-6 py-3 text-sm font-bold"
-        >
-          {t("notFound.back")}
-        </Link>
-      </div>
-    </div>
+    <RoomScreen>
+      <RoomTopBar>
+        <span className="plaza-display text-[1.0625rem] font-extrabold">Plaza</span>
+      </RoomTopBar>
+
+      <RoomBody center>
+        <RoomContent className="items-center gap-4 px-6 py-10 text-center">
+          <span
+            className="plaza-panel grid h-18 w-18 place-items-center rounded-3xl text-[1.875rem]"
+            aria-hidden="true"
+          >
+            🪑
+          </span>
+          <h1 className="plaza-display text-[1.375rem] font-extrabold">
+            {t("notFound.emptyTitle")}
+          </h1>
+          <p className="plaza-muted max-w-65 text-[0.84rem] leading-relaxed">
+            {t("notFound.emptyBody")}
+          </p>
+
+          <div className="mt-1.5 grid w-full max-w-70 gap-2.5">
+            <Link href="/" className="plaza-button rm-cta">
+              {t("notFound.createRoom")}
+            </Link>
+            <Link
+              href="/#join"
+              className="plaza-button-secondary flex h-14 items-center justify-center rounded-2xl text-sm font-semibold"
+            >
+              {t("notFound.enterCode")}
+            </Link>
+          </div>
+        </RoomContent>
+      </RoomBody>
+    </RoomScreen>
   );
 }

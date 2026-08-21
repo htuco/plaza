@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
+import { RoomBody, RoomBottomBar, RoomContent } from "@/components/room-shell";
+import {
+  PhaseHeader,
+  RoomError,
+  RoomLoading,
+  StandingRow,
+  WaitingNote,
+} from "@/components/room-game-ui";
+import { CheckIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
 import {
@@ -14,12 +23,7 @@ import {
   MIN_TOTAL_ROUNDS,
   OPTIONAL_GRADOVI_CATEGORIES,
 } from "./types";
-import type {
-  AnswerValidationStatus,
-  GradoviIntent,
-  GradoviSettings,
-  GradoviView,
-} from "./types";
+import type { GradoviIntent, GradoviSettings, GradoviView } from "./types";
 
 const GAME_ID = "gradovi-i-sela";
 const AUTOSAVE_DELAY_MS = 350;
@@ -61,16 +65,6 @@ function totalRoundPoints(view: GradoviView, targetPlayerId: string): number {
     (total, points) => total + points,
     0,
   );
-}
-
-function statusClasses(status: AnswerValidationStatus): string {
-  if (status === "valid") {
-    return "plaza-status-valid";
-  }
-  if (status === "invalid") {
-    return "plaza-status-invalid";
-  }
-  return "plaza-status-review";
 }
 
 async function readError(response: Response): Promise<string> {
@@ -501,14 +495,9 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
 
   if (!snapshot || !view) {
     return (
-      <div className="plaza-panel rounded-xl p-5">
-        <div className="plaza-skeleton h-5 w-32 rounded" />
-        <div className="mt-4 grid gap-2">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="plaza-skeleton h-12 rounded-lg" />
-          ))}
-        </div>
-      </div>
+      <RoomBody>
+        <RoomLoading rows={5} />
+      </RoomBody>
     );
   }
 
@@ -537,7 +526,7 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
 
   const settingsControls = (
     <section>
-      <h3 className="plaza-label mb-3">{t("gradovi.settings.title")}</h3>
+      <h3 className="rm-eyebrow mb-3 block">{t("gradovi.settings.title")}</h3>
       <div className="grid gap-3 sm:grid-cols-2">
         <SettingStepper
           label={t("gradovi.settings.roundTime")}
@@ -601,20 +590,8 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
     </section>
   );
 
-  return (
+  const overlays = (
     <>
-      {showFloatingTimer && (
-        <div
-          aria-label={`${timerIsUrgent ? t("gradovi.timerWarning") : t("gradovi.timer")}: ${formatTime(remainingMs)}`}
-          aria-live="polite"
-          className="plaza-floating-timer"
-          data-urgent={timerIsUrgent ? "true" : "false"}
-          role="timer"
-        >
-          <span className="plaza-floating-timer-dot" aria-hidden="true" />
-          <span className="font-mono tabular-nums">{formatTime(remainingMs)}</span>
-        </div>
-      )}
       {!timeUpNotice && screenNotice && (
         <div className="plaza-screen-overlay" data-tone={screenNotice.tone}>
           <div className="plaza-screen-content">
@@ -635,344 +612,369 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
           </div>
         </div>
       )}
-      <div className="plaza-panel rounded-xl">
-        <div className="plaza-divider border-b p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="plaza-label">
-                {t("gradovi.round", view.round, view.settings.totalRounds)}
-              </p>
-              <h2 className="truncate text-lg font-semibold">{phaseTitle}</h2>
-              {view.phase === "writing" && (
-                <p className="plaza-muted mt-0.5 text-xs">
-                  {t("gradovi.filled", filledCount, view.categories.length)}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              {view.phase === "writing" && (
-                <span className="plaza-input rounded-xl px-3 py-2 font-mono text-sm font-semibold tabular-nums">
-                  {formatTime(remainingMs)}
-                </span>
-              )}
-              {view.phase !== "setup" && (
-                <span className="plaza-letter-hero" aria-label={t("gradovi.notice.letter", view.letter)}>
-                  {view.letter}
-                </span>
-              )}
-            </div>
-          </div>
+    </>
+  );
 
-          {view.phase === "writing" && (
-            <div className="mt-4">
-              <div className="plaza-progress h-1.5 overflow-hidden rounded-full">
-                <div
-                  className="plaza-progress-fill h-full rounded-full transition-[width]"
-                  style={{ width: `${timerPercent}%` }}
-                />
-              </div>
-              <div className="plaza-muted mt-2 flex items-center justify-between text-xs">
-                <span>{t("gradovi.submitted", submittedCount, snapshot.players.length)}</span>
-                {meSubmitted && (
-                  <span className="plaza-status-valid rounded-full px-2 py-0.5 font-semibold">
-                    {t("gradovi.locked")}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
+  // ------------------------------------------------------- 11 · writing
+  if (view.phase === "writing") {
+    return (
+      <>
+        {overlays}
+
+        {/* The letter is the round's identity, so it leads the header. */}
+        <div className="rm-content flex items-center gap-3.5 px-5 pb-3.5 pt-[1.125rem] sm:px-6">
+          <span
+            className="rm-letter-tile"
+            aria-label={t("gradovi.notice.letter", view.letter)}
+          >
+            {view.letter}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="rm-eyebrow">
+              {t("gradovi.roundLetter", view.round, view.settings.totalRounds)}
+            </span>
+            <span className="text-[0.94rem] font-semibold">
+              {filledCount > 0
+                ? t("gradovi.filled", filledCount, view.categories.length)
+                : t("gradovi.fillCategories", view.categories.length)}
+            </span>
+            <span className="plaza-muted-2 text-[0.72rem]">
+              {t("gradovi.playersDone", submittedCount, snapshot.players.length)}
+            </span>
+          </span>
+          <span
+            className={`rm-timer shrink-0 ${timerIsUrgent ? "rm-timer--danger" : ""}`}
+            role="timer"
+            aria-live="polite"
+            aria-label={`${timerIsUrgent ? t("gradovi.timerWarning") : t("gradovi.timer")}: ${formatTime(remainingMs)}`}
+          >
+            {formatTime(remainingMs)}
+          </span>
         </div>
 
-        {error && <div className="plaza-error border-b px-4 py-3 text-sm">{error}</div>}
+        <div className="rm-content px-5 sm:px-6">
+          <span className="rm-track rm-track--thin">
+            <span
+              className={`rm-track__fill ${timerIsUrgent ? "rm-track__fill--danger" : ""}`}
+              style={{ width: `${timerPercent}%` }}
+            />
+          </span>
+        </div>
 
-        {view.phase === "setup" ? (
-          <div className="grid gap-5 p-4">
-            {settingsControls}
-
-            {view.isHost ? (
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  disabled={isSending}
-                  onClick={() => void saveSettings()}
-                  className="plaza-button-secondary h-12 rounded-xl text-sm font-medium disabled:opacity-50"
-                >
-                  {t("gradovi.saveSettings")}
-                </button>
-                <button
-                  type="button"
-                  disabled={isSending}
-                  onClick={() => void startRound()}
-                  className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
-                >
-                  {t("gradovi.startRound", 1)}
-                </button>
-              </div>
-            ) : (
-              <div className="plaza-subtle rounded-xl px-4 py-3">
-                <p className="plaza-muted text-sm">{t("gradovi.waitStartRound", 1)}</p>
-              </div>
-            )}
+        <RoomBody className="p-5 sm:p-6">
+          <RoomContent className="gap-2">
+          {error && <RoomError message={error} />}
+          <div className="grid gap-2 lg:grid-cols-2">
+          {view.categories.map((category) => {
+            const value = draftAnswers[category] ?? "";
+            const filled = value.trim().length > 0;
+            return (
+              <label key={category} className="rm-field-row">
+                <span className="rm-field-row__label">{category}</span>
+                <input
+                  value={value}
+                  maxLength={40}
+                  disabled={writingDisabled}
+                  onChange={(event) => updateAnswer(category, event.target.value)}
+                  className="rm-field-row__input"
+                  placeholder={t("gradovi.answerPlaceholder", category, view.letter)}
+                />
+                {filled && (
+                  <span className="shrink-0 text-[var(--plaza-success)]" aria-hidden="true">
+                    <CheckIcon size={14} />
+                  </span>
+                )}
+              </label>
+            );
+          })}
           </div>
-        ) : view.phase === "writing" ? (
-          <div className="relative p-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              {view.categories.map((category) => {
-                const filled = (draftAnswers[category] ?? "").trim().length > 0;
-                return (
-                  <label key={category} className="grid gap-1.5">
-                    <span className="plaza-label flex items-center justify-between">
-                      {category}
-                      {filled && (
-                        <span className="text-[var(--plaza-success)]" aria-hidden="true">
-                          ✓
+          </RoomContent>
+        </RoomBody>
+
+        <RoomBottomBar
+          note={meSubmitted ? t("gradovi.locked") : t("gradovi.stopNote")}
+        >
+          <button
+            type="button"
+            disabled={writingDisabled || isSending}
+            onClick={() => void submitAnswers()}
+            className="plaza-button rm-cta disabled:opacity-50"
+          >
+            {isSending ? t("gradovi.saving") : t("gradovi.doneStop")}
+          </button>
+          {view.isHost && (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void revealRound()}
+              className="plaza-ghost-button mx-auto rounded-lg px-3 py-1.5 text-[0.78rem] font-medium disabled:opacity-50"
+            >
+              {t("gradovi.reveal")}
+            </button>
+          )}
+        </RoomBottomBar>
+      </>
+    );
+  }
+
+  // ------------------------------------------- setup / review / reveal / finished
+  return (
+    <>
+      {overlays}
+
+      <PhaseHeader
+        eyebrow={t("gradovi.round", view.round, view.settings.totalRounds)}
+        title={phaseTitle}
+        right={
+          view.phase !== "setup" ? (
+            <span
+              className="rm-letter-tile h-11 w-11 rounded-xl text-xl"
+              aria-label={t("gradovi.notice.letter", view.letter)}
+            >
+              {view.letter}
+            </span>
+          ) : undefined
+        }
+      />
+
+      <RoomBody className="p-5 sm:p-6">
+        <RoomContent className="gap-5">
+        {error && <RoomError message={error} />}
+
+        {canConfigure && settingsControls}
+
+        {view.phase === "finished" && scoreRows.length > 0 && (
+          <div className="plaza-winner-card rounded-3xl px-5 py-7 text-center">
+            <p className="rm-eyebrow">{t("gradovi.winner")}</p>
+            <p className="rm-display mt-2 text-[1.75rem] font-extrabold">
+              {scoreRows[0].nickname}
+            </p>
+            <p className="plaza-muted mt-1 text-[0.84rem]">
+              {t("song.finalScore", view.scores[scoreRows[0].id] ?? 0)}
+            </p>
+          </div>
+        )}
+
+        {view.phase !== "setup" && (
+          <section className="grid gap-2.5">
+            <h3 className="rm-eyebrow">{t("gradovi.scoreboard")}</h3>
+            <ol className="grid gap-2">
+              {scoreRows.map((player, index) => (
+                <StandingRow
+                  key={player.id}
+                  rank={index + 1}
+                  name={player.nickname}
+                  isMe={player.id === playerId}
+                  youLabel={t("gradovi.you")}
+                  score={
+                    view.phase === "review" ? (
+                      <>
+                        {view.scores[player.id] ?? 0}
+                        <span className="plaza-status-valid ml-1.5 rounded px-1.5 py-0.5 text-[0.69rem]">
+                          +{totalRoundPoints(view, player.id)}
                         </span>
-                      )}
-                    </span>
-                    <input
-                      value={draftAnswers[category] ?? ""}
-                      maxLength={40}
-                      disabled={writingDisabled}
-                      onChange={(event) => updateAnswer(category, event.target.value)}
-                      className="plaza-input h-12 rounded-xl px-3 text-base"
-                      placeholder={t("gradovi.answerPlaceholder", category, view.letter)}
-                    />
-                  </label>
-                );
-              })}
-            </div>
+                      </>
+                    ) : (
+                      (view.scores[player.id] ?? 0)
+                    )
+                  }
+                />
+              ))}
+            </ol>
+          </section>
+        )}
 
-            <div className="plaza-sticky-actions mt-5 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                disabled={writingDisabled || isSending}
-                onClick={() => void submitAnswers()}
-                className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
-              >
-                {isSending ? t("gradovi.saving") : t("gradovi.submitAnswers")}
-              </button>
-              <button
-                type="button"
-                disabled={!view.isHost || isSending}
-                onClick={() => void revealRound()}
-                className="plaza-button-secondary h-12 rounded-xl text-sm font-medium disabled:opacity-50"
-              >
-                {t("gradovi.reveal")}
-              </button>
+        {view.allAnswers && (
+          <section className="grid gap-2.5">
+            <h3 className="rm-eyebrow">{t("gradovi.answers")}</h3>
+            <div className="grid gap-3">
+              {view.categories.map((category) => (
+                <div key={category} className="plaza-card overflow-hidden rounded-[0.875rem]">
+                  <div className="plaza-divider plaza-subtle border-b px-3 py-2 text-[0.81rem] font-semibold">
+                    {category}
+                  </div>
+                  <div className="divide-y divide-[var(--plaza-line)]">
+                    {snapshot.players.map((player) => {
+                      const answer = view.allAnswers?.[player.id]?.[category] ?? "";
+                      const points = view.roundScores[player.id]?.[category] ?? 0;
+                      const validation = view.validations?.[player.id]?.[category];
+                      const status = validation?.status ?? "needs-review";
+                      const reportedByMe = validation?.reports.includes(playerId) ?? false;
+                      return (
+                        <div key={player.id} className="grid gap-2.5 px-3 py-3 text-[0.81rem]">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="plaza-muted text-[0.69rem]">{player.nickname}</p>
+                              <p className="mt-0.5 break-words font-medium">{answer || "—"}</p>
+                              {validation && (
+                                <p className="plaza-muted-2 mt-1 break-words text-[0.69rem] leading-relaxed">
+                                  {validation.reason}
+                                  {validation.reports.length > 0 &&
+                                    ` / ${t("gradovi.reportCount", validation.reports.length)}`}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 flex-col items-end gap-1.5">
+                              <span
+                                className={`rm-chip ${
+                                  status === "valid"
+                                    ? "rm-chip--valid"
+                                    : status === "invalid"
+                                      ? "rm-chip--danger"
+                                      : "rm-chip--neutral"
+                                }`}
+                              >
+                                {status === "needs-review"
+                                  ? t("gradovi.status.review")
+                                  : t(`gradovi.status.${status}`)}
+                              </span>
+                              <span
+                                className={`rm-numeric rounded-full px-2 py-0.5 text-[0.69rem] ${
+                                  points > 0 ? "plaza-status-valid" : "plaza-chip plaza-muted"
+                                }`}
+                              >
+                                +{points}
+                              </span>
+                            </div>
+                          </div>
+                          {view.phase === "review" && (
+                            <div className="flex flex-wrap items-center gap-2">
+                              {view.isHost && answer && (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={isSending}
+                                    onClick={() =>
+                                      void reviewAnswer(player.id, category, "valid")
+                                    }
+                                    className="plaza-button-secondary h-8 rounded-lg px-2.5 text-[0.69rem] font-medium disabled:opacity-50"
+                                  >
+                                    ✓ {t("gradovi.valid")}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isSending}
+                                    onClick={() =>
+                                      void reviewAnswer(player.id, category, "invalid")
+                                    }
+                                    className="plaza-button-secondary h-8 rounded-lg px-2.5 text-[0.69rem] font-medium disabled:opacity-50"
+                                  >
+                                    ✕ {t("gradovi.invalid")}
+                                  </button>
+                                </>
+                              )}
+                              {!view.isHost && player.id !== playerId && answer && (
+                                <button
+                                  type="button"
+                                  disabled={reportedByMe || isSending}
+                                  onClick={() => void reportAnswer(player.id, category)}
+                                  className="plaza-button-secondary h-8 rounded-lg px-2.5 text-[0.69rem] font-medium disabled:opacity-50"
+                                >
+                                  {reportedByMe ? t("gradovi.reported") : t("gradovi.report")}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        ) : (
-          <div className="grid gap-5 p-4">
-            {canConfigure && settingsControls}
-            {canConfigure && (
+          </section>
+        )}
+        </RoomContent>
+      </RoomBody>
+
+      <RoomBottomBar
+        note={
+          view.phase === "finished" && !view.isHost ? t("gradovi.hostCloseNote") : undefined
+        }
+      >
+        {view.phase === "setup" &&
+          (view.isHost ? (
+            <>
+              <button
+                type="button"
+                disabled={isSending}
+                onClick={() => void startRound()}
+                className="plaza-button rm-cta disabled:opacity-50"
+              >
+                {t("gradovi.startRound", 1)}
+              </button>
               <button
                 type="button"
                 disabled={isSending}
                 onClick={() => void saveSettings()}
-                className="plaza-button-secondary h-11 rounded-xl text-sm font-medium disabled:opacity-50"
+                className="plaza-ghost-button mx-auto rounded-lg px-3 py-1.5 text-[0.78rem] font-medium disabled:opacity-50"
               >
                 {t("gradovi.saveSettings")}
               </button>
-            )}
+            </>
+          ) : (
+            <WaitingNote>{t("gradovi.waitStartRound", 1)}</WaitingNote>
+          ))}
 
-            {view.phase === "finished" && scoreRows.length > 0 && (
-              <div className="plaza-winner-card rounded-2xl px-5 py-7 text-center">
-                <p className="plaza-label">{t("gradovi.winner")}</p>
-                <p className="mt-2 text-3xl font-bold">{scoreRows[0].nickname}</p>
-                <p className="plaza-muted mt-1 text-sm">
-                  {t("song.finalScore", view.scores[scoreRows[0].id] ?? 0)}
-                </p>
-              </div>
-            )}
-
-            <section>
-              <h3 className="plaza-label mb-2">{t("gradovi.scoreboard")}</h3>
-              <ol className="grid gap-2">
-                {scoreRows.map((player, index) => (
-                  <li
-                    key={player.id}
-                    className={`plaza-rank-row flex h-12 items-center justify-between rounded-xl px-3 text-sm ${
-                      player.id === playerId ? "plaza-rank-row--me" : ""
-                    }`}
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="plaza-rank-badge">{index + 1}</span>
-                      <span className="truncate font-medium">{player.nickname}</span>
-                      {player.id === playerId && (
-                        <span className="plaza-muted-2 text-xs">{t("gradovi.you")}</span>
-                      )}
-                    </span>
-                    <span className="font-mono font-semibold tabular-nums">
-                      {view.phase === "review" ? (
-                        <>
-                          {view.scores[player.id] ?? 0}
-                          <span className="plaza-status-valid ml-1.5 rounded px-1.5 py-0.5 text-xs">
-                            +{totalRoundPoints(view, player.id)}
-                          </span>
-                        </>
-                      ) : (
-                        (view.scores[player.id] ?? 0)
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-
-            {view.allAnswers && (
-              <section>
-                <h3 className="plaza-label mb-2">{t("gradovi.answers")}</h3>
-                <div className="grid gap-3">
-                  {view.categories.map((category) => (
-                    <div key={category} className="plaza-card overflow-hidden rounded-xl">
-                      <div className="plaza-divider plaza-subtle border-b px-3 py-2 text-sm font-semibold">
-                        {category}
-                      </div>
-                      <div className="divide-y divide-[var(--plaza-line)]">
-                        {snapshot.players.map((player) => {
-                          const answer = view.allAnswers?.[player.id]?.[category] ?? "";
-                          const points = view.roundScores[player.id]?.[category] ?? 0;
-                          const validation = view.validations?.[player.id]?.[category];
-                          const status = validation?.status ?? "needs-review";
-                          const reportedByMe = validation?.reports.includes(playerId) ?? false;
-                          return (
-                            <div key={player.id} className="grid gap-2.5 px-3 py-3 text-sm">
-                              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-                                <div className="min-w-0">
-                                  <p className="plaza-muted text-xs">{player.nickname}</p>
-                                  <p className="mt-0.5 break-words font-medium">{answer || "—"}</p>
-                                  {validation && (
-                                    <p className="plaza-muted-2 mt-1 break-words text-xs leading-relaxed">
-                                      {validation.reason}
-                                      {validation.reports.length > 0 &&
-                                        ` / ${t("gradovi.reportCount", validation.reports.length)}`}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                                  <span
-                                    className={`rounded-full px-2 py-1 text-xs font-medium ${statusClasses(status)}`}
-                                  >
-                                    {status === "needs-review"
-                                      ? t("gradovi.status.review")
-                                      : t(`gradovi.status.${status}`)}
-                                  </span>
-                                  <span
-                                    className={`rounded-full px-2 py-1 font-mono text-xs ${
-                                      points > 0 ? "plaza-status-valid" : "plaza-chip plaza-muted"
-                                    }`}
-                                  >
-                                    +{points}
-                                  </span>
-                                </div>
-                              </div>
-                              {(view.phase === "review") && (
-                                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                                  {view.isHost && answer && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        disabled={isSending}
-                                        onClick={() => void reviewAnswer(player.id, category, "valid")}
-                                        className="plaza-button-secondary h-8 rounded-lg px-2.5 text-xs font-medium disabled:opacity-50"
-                                      >
-                                        ✓ {t("gradovi.valid")}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={isSending}
-                                        onClick={() =>
-                                          void reviewAnswer(player.id, category, "invalid")
-                                        }
-                                        className="plaza-button-secondary h-8 rounded-lg px-2.5 text-xs font-medium disabled:opacity-50"
-                                      >
-                                        ✕ {t("gradovi.invalid")}
-                                      </button>
-                                    </>
-                                  )}
-                                  {!view.isHost && player.id !== playerId && answer && (
-                                    <button
-                                      type="button"
-                                      disabled={reportedByMe || isSending}
-                                      onClick={() => void reportAnswer(player.id, category)}
-                                      className="plaza-button-secondary h-8 rounded-lg px-2.5 text-xs font-medium disabled:opacity-50"
-                                    >
-                                      {reportedByMe ? t("gradovi.reported") : t("gradovi.report")}
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {view.phase === "review" ? (
-              <div className={`grid gap-2 ${view.isHost ? "sm:grid-cols-2" : ""}`}>
-                {view.isHost && (
-                  <button
-                    type="button"
-                    disabled={isSending || isCheckingAi}
-                    onClick={() => void runAiValidation()}
-                    className="plaza-button-secondary h-12 rounded-xl text-sm font-medium disabled:opacity-50"
-                  >
-                    {isCheckingAi ? (
-                      <span className="inline-flex items-center gap-2">
-                        <span className="plaza-floating-timer-dot animate-pulse" aria-hidden="true" />
-                        {t("gradovi.aiChecking")}
-                      </span>
-                    ) : (
-                      `✨ ${t("gradovi.aiCheck")}`
-                    )}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={!view.isHost || isSending || isCheckingAi}
-                  onClick={() => void lockRound()}
-                  className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
-                >
-                  {view.isHost ? t("gradovi.lockScores") : t("gradovi.waitingHostReview")}
-                </button>
-              </div>
-            ) : (
-              <div className="grid gap-2">
-                {view.phase === "finished" ? (
-                  <>
-                    <button
-                      type="button"
-                      disabled={!view.isHost || isSending}
-                      onClick={() => void finishSession()}
-                      className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
-                    >
-                      {view.isHost ? t("gradovi.backToLaunchpad") : t("gradovi.waitingForHost")}
-                    </button>
-                    {!view.isHost && (
-                      <p className="plaza-muted text-center text-xs">{t("gradovi.hostCloseNote")}</p>
-                    )}
-                  </>
+        {view.phase === "review" &&
+          (view.isHost ? (
+            <>
+              <button
+                type="button"
+                disabled={isSending || isCheckingAi}
+                onClick={() => void lockRound()}
+                className="plaza-button rm-cta disabled:opacity-50"
+              >
+                {t("gradovi.lockScores")}
+              </button>
+              <button
+                type="button"
+                disabled={isSending || isCheckingAi}
+                onClick={() => void runAiValidation()}
+                className="plaza-button-secondary h-12 rounded-[0.875rem] text-[0.84rem] font-semibold disabled:opacity-50"
+              >
+                {isCheckingAi ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="plaza-floating-timer-dot animate-pulse" aria-hidden="true" />
+                    {t("gradovi.aiChecking")}
+                  </span>
                 ) : (
-                  <button
-                    type="button"
-                    disabled={!view.isHost || isSending}
-                    onClick={() => void startRound()}
-                    className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
-                  >
-                    {view.isHost
-                      ? t("gradovi.startRound", view.round + 1)
-                      : t("gradovi.waitingForHost")}
-                  </button>
+                  `✨ ${t("gradovi.aiCheck")}`
                 )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              </button>
+            </>
+          ) : (
+            <WaitingNote>{t("gradovi.waitingHostReview")}</WaitingNote>
+          ))}
+
+        {view.phase === "reveal" &&
+          (view.isHost ? (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void startRound()}
+              className="plaza-button rm-cta disabled:opacity-50"
+            >
+              {t("gradovi.startRound", view.round + 1)}
+            </button>
+          ) : (
+            <WaitingNote>{t("gradovi.waitingForHost")}</WaitingNote>
+          ))}
+
+        {view.phase === "finished" &&
+          (view.isHost ? (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void finishSession()}
+              className="plaza-button rm-cta disabled:opacity-50"
+            >
+              {t("gradovi.backToLaunchpad")}
+            </button>
+          ) : (
+            <WaitingNote>{t("gradovi.waitingForHost")}</WaitingNote>
+          ))}
+      </RoomBottomBar>
     </>
   );
 }

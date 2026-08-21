@@ -11,6 +11,50 @@ next.
 
 ## Current
 
+**Feature:** Room-surface redesign — shell, lobby, share/QR and all six game screens
+**Status:** done, pending phone QA
+**Date:** 2026-08-21
+
+**Summary**
+- Implemented `design_handoff_plaza_redesign/` across every authenticated screen (join, lobby host + guest, share/QR sheet, empty room, leave dialog, and all six games). The landing page is deliberately untouched apart from an `id="join"` anchor so the empty-room screen's secondary action has somewhere to go.
+- **New room shell** (`components/room-shell.tsx` + `app/room.css`): a 56px top bar with a hairline, a body that scrolls, and a bottom bar holding the screen's single primary action within one-hand reach. Every game client now renders its own body + bottom bar inside the shell, so the CTA sits in the same place across games.
+- **Room code is the hero of the lobby**: tap-to-copy cells (`components/room-code.tsx`, four placements — join hero, lobby, compact guest row, in-game chip) with Share + "Generate QR" as the primary action pair. Guests keep both. The QR sheet repeats the code in monospace under the QR so it can be read out loud.
+- **Per-screen work**: role card that flips and re-hides (Imposteri 05), vote rows with a countdown ring (06), tinted round verdict + vote bars (07), claim/next cards with a danger/success answer pair (Veće ili Manje 08), word card with a deliberately 2:1 correct-vs-skip action pair (Alias 10), 66px letter tile + 52px answer rows (Gradovi i Sela 11), a real 4×4 board with column headers and a solution strip (Asocijacije 12), and a 12-bar clip waveform + match chips (Guess the Song 13).
+- **Responsive beyond the handoff**: the handoff draws a fixed 390px phone. The shell is mobile-first, becomes a framed column at 640px, and widens on desktop — screens with two jobs (lobby, Asocijacije, Gradovi i Sela, Veće ili Manje) split into two panes via `RoomSplit`, the rest stay a capped single column.
+- New shared pieces: `components/room-game-ui.tsx` (phase header, phase segments, standings row, loading/error/waiting), `components/room-icons.tsx` (the handoff's glyphs as components), `GameIcon` in `components/game-icons.tsx`.
+- ~40 new translation keys (en + bs) for the redesign's copy.
+- Verified in the browser at 320 / 390 / 1280 / 1440 across the lobby and every game screen: no horizontal overflow anywhere, bars stay fixed, and the geometry the handoff specifies (310px leave dialog, 180px artwork, 12 × 6px bars, 2:1 Alias actions) measures correct.
+
+**Touched**
+- `app/room.css` (new), `app/globals.css` (imports it)
+- `components/room-shell.tsx`, `components/room-game-ui.tsx`, `components/room-icons.tsx` (new)
+- `components/{room-code,share-room,game-room-header,game-details,game-icons,join-lobby-form,leave-room-button,submit-button,preferences-switcher,preferences-provider}.tsx`
+- `app/play/[room]/{page-level shell,room-lobby,not-found}` and `app/play/[room]/[game]/page.tsx`
+- `features/{imposteri,alias,gradovi-i-sela,asocijacije,guess-the-song,higher-lower}/client.tsx`
+- `app/page.tsx` (anchor only), `eslint.config.mjs`
+
+**Decisions**
+- **Kept the warm "kasna večer za stolom" theme instead of the handoff's dark #0F0F16/#6C69FF scene**, on the user's explicit instruction mid-build ("keep the theme, this warm yellow theme, just move some things around"). The redesign was therefore implemented as *structure*: layout, hierarchy, geometry and copy follow the handoff; colour, type (Geist + Bricolage display + Geist Mono rather than Poppins + JetBrains Mono) and elevation come from the existing tokens. Room screens keep following the light/dark preference.
+- **Desktop is a first-class size**, also on the user's instruction. The handoff's fixed phone column is the mobile-first base, not the ceiling.
+- Guests see the players card as well as the selected game's rules (the handoff's screen 03 shows only rules) — knowing who is in the room matters more than matching that one screen exactly.
+- Tap-to-copy shows a confirmation rather than a permanent "tap to copy" label, matching the handoff's idle screens; the space is reserved so copying never shifts the layout.
+- Asocijacije column guesses live behind their solution cell (tap the "?" to open a field) — the 4×4 grid has no room for four inline inputs.
+- `app/room.css` is imported at the top of `globals.css`, so the two rules that override existing `.plaza-*` base styles use doubled selectors to win on specificity rather than order.
+- `design_handoff_*/` is excluded from ESLint: the bundled design-system JS is reference material, not app code, and was producing 22 errors / 163 warnings.
+
+**Open / Next**
+- **Phone QA needed**: real-device pass on the room shell (iOS safe-area padding on the bottom bar, the scrolling body vs. Safari's dynamic toolbar, tap targets on the 4×4 board).
+- Game icons are still emoji placeholders — the handoff asks for real icons.
+- `app/globals.css` now carries dead rules for the app screens the redesign replaced (old `.plaza-code-hero`, `.plaza-role-flip`, `.plaza-asoc-*`, etc.). Left in place deliberately to avoid touching landing styles in this PR; worth a follow-up `/cleanup` pass.
+- Refresh `context/project-overview.md`'s game table to match the live registry (still stale, flagged in prior features).
+
+
+---
+
+## History
+
+### 2026-08-21 - Guess the Song — synchronized countdown & autoplay
+
 **Feature:** Guess the Song — synchronized countdown & autoplay
 **Status:** done, pending phone QA
 **Date:** 2026-08-21
@@ -45,10 +89,6 @@ next.
 - **Phone QA needed**: verify two+ phones actually start the clip at the same instant after the countdown, that the unlock banner tap reliably satisfies iOS Safari's autoplay policy across rounds, and that music stops immediately on round-end.
 - If the unlock-tap still gets blocked on some browsers even after a real gesture, consider muting+autoplaying (allowed without a gesture) and unmuting on the unlock tap instead.
 - Refresh `context/project-overview.md`'s game table to match the live registry (still stale, flagged in a prior feature).
-
----
-
-## History
 
 ### 2026-08-20 - Higher or Lower — new game module
 

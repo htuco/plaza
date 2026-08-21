@@ -29,6 +29,24 @@ export function PreferencesSwitcher() {
   );
 }
 
+// Language-only switcher for the room top bar — the room screens are
+// one-handed and have no space for the theme control.
+export function LanguageSwitcher() {
+  const { language, setLanguage, t } = usePreferences();
+
+  return (
+    <SegmentedControl
+      label={t("prefs.language")}
+      value={language}
+      options={[
+        { value: "bs", label: "BS" },
+        { value: "en", label: "EN" },
+      ]}
+      onChange={(value) => setLanguage(value as LanguagePreference)}
+    />
+  );
+}
+
 function SegmentedControl({
   label,
   value,

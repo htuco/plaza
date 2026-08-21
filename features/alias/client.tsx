@@ -3,6 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
+import { RoomBody, RoomBottomBar, RoomContent } from "@/components/room-shell";
+import {
+  PhaseHeader,
+  RoomError,
+  RoomLoading,
+  WaitingNote,
+} from "@/components/room-game-ui";
+import { CheckIcon, SkipIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
 import {
@@ -38,6 +46,11 @@ async function readError(response: Response): Promise<string> {
   } catch {
     return "Something went wrong.";
   }
+}
+
+function formatClock(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
 function teamColorClass(teamId: string): string {
@@ -167,14 +180,9 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
 
   if (!snapshot || !view) {
     return (
-      <div className="plaza-panel rounded-xl p-5">
-        <div className="plaza-skeleton h-5 w-32 rounded" />
-        <div className="mt-4 grid gap-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="plaza-skeleton h-12 rounded-lg" />
-          ))}
-        </div>
-      </div>
+      <RoomBody>
+        <RoomLoading rows={4} />
+      </RoomBody>
     );
   }
 
@@ -186,11 +194,32 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
   const iAmOnActiveTeam = view.myTeamId !== null && view.myTeamId === view.activeTeamId;
   const secondsLeft = remainingMs !== null ? Math.ceil(remainingMs / 1000) : null;
   const sortedTeams = [...view.teams].sort((a, b) => b.score - a.score);
+  const turnDurationMs = view.settings.turnDurationSeconds * 1000;
+  const turnUrgent = secondsLeft !== null && secondsLeft <= 10;
+
+  // Team scores as a chip row — the bottom bar's second line during a turn.
+  const teamChips = (
+    <div className="flex gap-2">
+      {view.teams.map((team) => (
+        <span
+          key={team.id}
+          className={`${teamColorClass(team.id)} flex flex-1 items-center justify-between gap-2 rounded-xl px-3 py-2.5 ${
+            team.id === view.activeTeamId
+              ? "plaza-team-pill"
+              : "plaza-subtle border border-[var(--plaza-line)]"
+          }`}
+        >
+          <span className="truncate text-[0.78rem] font-semibold">{team.name}</span>
+          <span className="rm-numeric text-[0.875rem] font-extrabold">{team.score}</span>
+        </span>
+      ))}
+    </div>
+  );
 
   const scoreboard = (
-    <section aria-label={t("alias.scoreboard")} className="grid gap-2">
-      <h3 className="plaza-label">{t("alias.scoreboard")}</h3>
-      <div className="grid gap-2 sm:grid-cols-2">
+    <section aria-label={t("alias.scoreboard")} className="grid gap-2.5">
+      <h3 className="rm-eyebrow">{t("alias.scoreboard")}</h3>
+      <div className="grid gap-2">
         {sortedTeams.map((team) => (
           <div
             key={team.id}
@@ -199,16 +228,18 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
             }`}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2 text-sm font-semibold">
+              <span className="flex min-w-0 items-center gap-2 text-[0.84rem] font-semibold">
                 <span className="plaza-team-dot" aria-hidden="true" />
-                {team.name}
+                <span className="truncate">{team.name}</span>
                 {team.id === view.myTeamId && (
-                  <span className="plaza-muted-2 text-xs font-normal">{t("gradovi.you")}</span>
+                  <span className="plaza-muted-2 shrink-0 text-[0.69rem] font-normal">
+                    {t("gradovi.you")}
+                  </span>
                 )}
               </span>
-              <span className="font-mono text-lg font-bold tabular-nums">{team.score}</span>
+              <span className="rm-numeric text-[1.0625rem] font-extrabold">{team.score}</span>
             </div>
-            <p className="plaza-muted mt-0.5 truncate text-xs">
+            <p className="plaza-muted mt-0.5 truncate text-[0.69rem]">
               {team.playerIds.map((id) => playersById.get(id)?.nickname ?? "—").join(", ") ||
                 t("alias.noPlayers")}
             </p>
@@ -218,303 +249,324 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
     </section>
   );
 
-  return (
-    <div className="grid gap-4">
-      <div className="plaza-panel rounded-xl">
-        <div className="plaza-divider border-b p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="plaza-label">
-                {view.phase === "setup"
-                  ? t("alias.phase.setup")
-                  : t("alias.roundOf", view.round, view.settings.totalRounds)}
-              </p>
-              <h2 className="truncate text-lg font-semibold">
-                {view.phase === "setup" && t("alias.setupTitle")}
-                {view.phase === "turnIntro" && t("alias.turnIntroTitle")}
-                {view.phase === "explaining" && t("alias.explainingTitle")}
-                {view.phase === "turnReview" && t("alias.turnReviewTitle")}
-                {view.phase === "finished" && t("alias.finishedTitle")}
-              </h2>
-            </div>
-            {activeTeam && view.phase !== "setup" && view.phase !== "finished" && (
-              <span
-                className={`plaza-team-pill ${teamColorClass(activeTeam.id)} rounded-full px-3 py-1.5 text-xs font-semibold`}
-              >
-                <span className="plaza-team-dot" aria-hidden="true" /> {activeTeam.name}
-              </span>
-            )}
-          </div>
+  const phaseEyebrow =
+    view.phase === "setup"
+      ? t("alias.phase.setup")
+      : `${t("alias.roundOf", view.round, view.settings.totalRounds)}${
+          activeTeam ? ` · ${activeTeam.name}` : ""
+        }`;
+
+  // -------------------------------------------------------- 10 · explaining
+  if (view.phase === "explaining") {
+    return (
+      <>
+        <PhaseHeader
+          eyebrow={phaseEyebrow}
+          title={
+            view.isExplainer
+              ? t("alias.youExplain")
+              : iAmOnActiveTeam
+                ? t("alias.teamExplains")
+                : t("alias.otherTeamExplains")
+          }
+          right={
+            <span
+              className={`rm-timer ${turnUrgent ? "rm-timer--danger" : "rm-timer--accent"}`}
+              role="timer"
+              aria-live="polite"
+            >
+              {remainingMs !== null ? formatClock(remainingMs) : "–"}
+            </span>
+          }
+        />
+
+        {/* Mirrored from the server's turn deadline, never counted locally. */}
+        <div className="rm-content px-5 pt-3 sm:px-6">
+          <span className="rm-track rm-track--thin">
+            <span
+              className="rm-track__fill rm-track__fill--danger"
+              style={{
+                width: `${
+                  remainingMs !== null && turnDurationMs > 0
+                    ? Math.min(100, (remainingMs / turnDurationMs) * 100)
+                    : 0
+                }%`,
+              }}
+            />
+          </span>
         </div>
 
-        {error && <div className="plaza-error border-b px-4 py-3 text-sm">{error}</div>}
+        <RoomBody center className="p-5 sm:p-6">
+          <RoomContent className="gap-5">
+          {error && <RoomError message={error} />}
 
-        {/* ------------------------------------------------ setup */}
-        {view.phase === "setup" && (
-          <div className="grid gap-6 p-4">
-            {view.isHost ? (
-              <>
-                <section className="grid gap-3">
-                  <h3 className="plaza-label">{t("alias.settings")}</h3>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Stepper
-                      label={t("alias.turnDuration")}
-                      value={view.settings.turnDurationSeconds}
-                      unit={t("gradovi.settings.seconds")}
-                      step={15}
-                      min={MIN_TURN_DURATION_SECONDS}
-                      max={MAX_TURN_DURATION_SECONDS}
-                      disabled={isSending}
-                      onChange={(value) =>
-                        void sendIntent({
-                          kind: "update-settings",
-                          settings: { turnDurationSeconds: value },
-                        })
-                      }
-                    />
-                    <Stepper
-                      label={t("alias.rounds")}
-                      value={view.settings.totalRounds}
-                      step={1}
-                      min={MIN_ALIAS_ROUNDS}
-                      max={MAX_ALIAS_ROUNDS}
-                      disabled={isSending}
-                      onChange={(value) =>
-                        void sendIntent({ kind: "update-settings", settings: { totalRounds: value } })
-                      }
-                    />
-                  </div>
-                  <label className="plaza-card flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-xl px-3.5 py-2.5">
-                    <span className="text-sm font-medium">{t("alias.skipPenalty")}</span>
-                    <input
-                      type="checkbox"
-                      checked={view.settings.skipPenalty}
-                      disabled={isSending}
-                      onChange={(event) =>
-                        void sendIntent({
-                          kind: "update-settings",
-                          settings: { skipPenalty: event.target.checked },
-                        })
-                      }
-                      className="h-5 w-5 accent-[var(--plaza-accent)]"
-                    />
-                  </label>
-                </section>
+          {/* Only the active explainer's view carries `currentWord`. */}
+          {view.isExplainer ? (
+            <div className="plaza-word-card grid justify-items-center gap-2.5 rounded-3xl px-6 py-9 text-center">
+              <span className="rm-eyebrow">{t("alias.explainLabel")}</span>
+              <span className="rm-display text-[2.5rem] font-extrabold">
+                {view.currentWord ?? "…"}
+              </span>
+              <span className="plaza-muted-2 text-[0.78rem]">{t("alias.wordRule")}</span>
+            </div>
+          ) : (
+            <div className="plaza-word-card grid justify-items-center gap-2.5 rounded-3xl px-6 py-9 text-center">
+              <span className="rm-eyebrow">
+                {activeTeam?.name} · {explainer?.nickname ?? "—"}
+              </span>
+              <span className="rm-display text-[1.75rem] font-extrabold">
+                {iAmOnActiveTeam ? t("alias.guessOutLoud") : t("alias.watchAndWait")}
+              </span>
+            </div>
+          )}
 
-                <section className="grid gap-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="plaza-label">{t("alias.teams")}</h3>
-                    <div className="flex items-center gap-2">
-                      <Stepper
-                        compact
-                        label={t("alias.teamCount")}
-                        value={view.teams.length}
-                        step={1}
-                        min={2}
-                        max={MAX_ALIAS_TEAMS}
-                        disabled={isSending}
-                        onChange={(value) => void sendIntent({ kind: "set-team-count", count: value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    {snapshot.players.map((player) => {
-                      const playerTeam = view.teams.find((team) =>
-                        team.playerIds.includes(player.id),
-                      );
-                      return (
-                        <div
-                          key={player.id}
-                          className="plaza-card flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2.5"
-                        >
-                          <span className="min-w-0 truncate text-sm font-medium">
-                            {player.nickname}
-                            {player.id === playerId && (
-                              <span className="plaza-muted-2 ml-1.5 text-xs font-normal">
-                                {t("gradovi.you")}
-                              </span>
-                            )}
-                          </span>
-                          <div className="flex gap-1" role="group" aria-label={t("alias.assignTeam", player.nickname)}>
-                            {view.teams.map((team) => {
-                              const selected = playerTeam?.id === team.id;
-                              return (
-                                <button
-                                  key={team.id}
-                                  type="button"
-                                  aria-pressed={selected}
-                                  disabled={isSending}
-                                  onClick={() =>
-                                    void sendIntent({
-                                      kind: "assign-player",
-                                      playerId: player.id,
-                                      teamId: selected ? null : team.id,
-                                    })
-                                  }
-                                  className={`plaza-team-toggle ${teamColorClass(team.id)} h-9 rounded-lg px-2.5 text-xs font-semibold ${
-                                    selected ? "plaza-team-toggle--selected" : ""
-                                  }`}
-                                >
-                                  {team.name}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isSending}
-                    onClick={() => void sendIntent({ kind: "auto-balance" })}
-                    className="plaza-button-secondary h-11 rounded-xl text-sm font-medium disabled:opacity-50"
-                  >
-                    {t("alias.autoBalance")}
-                  </button>
-                </section>
+          {view.isExplainer && (
+            /* "Correct" is deliberately twice as wide as "skip". */
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                disabled={isSending || (remainingMs !== null && remainingMs <= 0)}
+                onClick={() => void sendIntent({ kind: "mark-word", result: "skipped" })}
+                className="plaza-action-skip flex h-18 flex-1 flex-col items-center justify-center gap-0.5 rounded-[1.25rem] disabled:opacity-50"
+              >
+                <span className="flex items-center gap-1.5 text-[0.94rem] font-extrabold">
+                  <SkipIcon /> {t("alias.skip")}
+                </span>
+                <span className="text-[0.69rem] font-medium opacity-80">
+                  {view.settings.skipPenalty ? t("alias.penalty") : t("alias.noPenalty")}
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={isSending || (remainingMs !== null && remainingMs <= 0)}
+                onClick={() => void sendIntent({ kind: "mark-word", result: "correct" })}
+                className="plaza-action-correct flex h-18 flex-[2] items-center justify-center gap-2 rounded-[1.25rem] text-[1.0625rem] font-extrabold disabled:opacity-50"
+              >
+                <CheckIcon size={18} /> {t("alias.correct")}
+              </button>
+            </div>
+          )}
 
-                <div className="grid gap-2">
-                  <button
-                    type="button"
-                    disabled={isSending}
-                    onClick={() => void sendIntent({ kind: "start-game" })}
-                    className="plaza-button h-12 rounded-xl text-base font-semibold disabled:opacity-50"
-                  >
-                    {t("alias.startGame")}
-                  </button>
-                  <p className="plaza-muted text-center text-xs">
-                    {t("alias.teamRequirement", MIN_TEAM_SIZE)}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <div className="grid gap-4">
-                <p className="plaza-muted text-sm">{t("alias.waitingForSetup")}</p>
-                {scoreboard}
-              </div>
-            )}
+          {(view.isExplainer || view.isHost) && (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void sendIntent({ kind: "end-turn" })}
+              className="plaza-ghost-button mx-auto h-10 rounded-lg px-3 text-[0.81rem] font-medium disabled:opacity-50"
+            >
+              {t("alias.endTurnEarly")}
+            </button>
+          )}
+          </RoomContent>
+        </RoomBody>
+
+        <RoomBottomBar>
+          <div className="plaza-muted flex items-center justify-between gap-2 text-[0.75rem]">
+            <span>{t("alias.turnTally", view.turnCorrect, view.turnSkipped)}</span>
+            <span className="shrink-0">{t("alias.wordsLeft", view.wordsRemaining)}</span>
           </div>
-        )}
+          {teamChips}
+        </RoomBottomBar>
+      </>
+    );
+  }
 
-        {/* ------------------------------------------------ turn intro */}
+  // ------------------------------------------------------------ every other phase
+  return (
+    <>
+      <PhaseHeader
+        eyebrow={phaseEyebrow}
+        title={
+          view.phase === "setup"
+            ? t("alias.setupTitle")
+            : view.phase === "turnIntro"
+              ? t("alias.turnIntroTitle")
+              : view.phase === "turnReview"
+                ? t("alias.turnReviewTitle")
+                : t("alias.finishedTitle")
+        }
+        right={
+          activeTeam && view.phase !== "setup" && view.phase !== "finished" ? (
+            <span
+              className={`plaza-team-pill ${teamColorClass(activeTeam.id)} rounded-full px-3 py-1.5 text-[0.72rem] font-semibold`}
+            >
+              <span className="plaza-team-dot" aria-hidden="true" /> {activeTeam.name}
+            </span>
+          ) : undefined
+        }
+      />
+
+      <RoomBody className="p-5 sm:p-6">
+        <RoomContent className="gap-5">
+        {error && <RoomError message={error} />}
+
+        {/* ----------------------------------------------------------- setup */}
+        {view.phase === "setup" &&
+          (view.isHost ? (
+            <>
+              <section className="grid gap-3">
+                <h3 className="rm-eyebrow">{t("alias.settings")}</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <Stepper
+                    label={t("alias.turnDuration")}
+                    value={view.settings.turnDurationSeconds}
+                    unit={t("gradovi.settings.seconds")}
+                    step={15}
+                    min={MIN_TURN_DURATION_SECONDS}
+                    max={MAX_TURN_DURATION_SECONDS}
+                    disabled={isSending}
+                    onChange={(value) =>
+                      void sendIntent({
+                        kind: "update-settings",
+                        settings: { turnDurationSeconds: value },
+                      })
+                    }
+                  />
+                  <Stepper
+                    label={t("alias.rounds")}
+                    value={view.settings.totalRounds}
+                    step={1}
+                    min={MIN_ALIAS_ROUNDS}
+                    max={MAX_ALIAS_ROUNDS}
+                    disabled={isSending}
+                    onChange={(value) =>
+                      void sendIntent({ kind: "update-settings", settings: { totalRounds: value } })
+                    }
+                  />
+                </div>
+                <label className="plaza-card flex min-h-13 cursor-pointer items-center justify-between gap-3 rounded-[0.875rem] px-3.5 py-2.5">
+                  <span className="text-[0.84rem] font-medium">{t("alias.skipPenalty")}</span>
+                  <input
+                    type="checkbox"
+                    checked={view.settings.skipPenalty}
+                    disabled={isSending}
+                    onChange={(event) =>
+                      void sendIntent({
+                        kind: "update-settings",
+                        settings: { skipPenalty: event.target.checked },
+                      })
+                    }
+                    className="h-5 w-5 accent-[var(--plaza-accent)]"
+                  />
+                </label>
+              </section>
+
+              <section className="grid gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="rm-eyebrow">{t("alias.teams")}</h3>
+                  <Stepper
+                    compact
+                    label={t("alias.teamCount")}
+                    value={view.teams.length}
+                    step={1}
+                    min={2}
+                    max={MAX_ALIAS_TEAMS}
+                    disabled={isSending}
+                    onChange={(value) => void sendIntent({ kind: "set-team-count", count: value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  {snapshot.players.map((player) => {
+                    const playerTeam = view.teams.find((team) =>
+                      team.playerIds.includes(player.id),
+                    );
+                    return (
+                      <div
+                        key={player.id}
+                        className="plaza-card flex flex-wrap items-center justify-between gap-2 rounded-[0.875rem] px-3 py-2.5"
+                      >
+                        <span className="min-w-0 truncate text-[0.84rem] font-medium">
+                          {player.nickname}
+                          {player.id === playerId && (
+                            <span className="plaza-muted-2 ml-1.5 text-[0.69rem] font-normal">
+                              {t("gradovi.you")}
+                            </span>
+                          )}
+                        </span>
+                        <div
+                          className="flex gap-1"
+                          role="group"
+                          aria-label={t("alias.assignTeam", player.nickname)}
+                        >
+                          {view.teams.map((team) => {
+                            const selected = playerTeam?.id === team.id;
+                            return (
+                              <button
+                                key={team.id}
+                                type="button"
+                                aria-pressed={selected}
+                                disabled={isSending}
+                                onClick={() =>
+                                  void sendIntent({
+                                    kind: "assign-player",
+                                    playerId: player.id,
+                                    teamId: selected ? null : team.id,
+                                  })
+                                }
+                                className={`plaza-team-toggle ${teamColorClass(team.id)} h-9 rounded-lg px-2.5 text-[0.69rem] font-semibold ${
+                                  selected ? "plaza-team-toggle--selected" : ""
+                                }`}
+                              >
+                                {team.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  disabled={isSending}
+                  onClick={() => void sendIntent({ kind: "auto-balance" })}
+                  className="plaza-button-secondary h-12 rounded-[0.875rem] text-[0.84rem] font-semibold disabled:opacity-50"
+                >
+                  {t("alias.autoBalance")}
+                </button>
+              </section>
+            </>
+          ) : (
+            <>
+              <p className="plaza-muted text-[0.84rem]">{t("alias.waitingForSetup")}</p>
+              {scoreboard}
+            </>
+          ))}
+
+        {/* ------------------------------------------------------- turn intro */}
         {view.phase === "turnIntro" && activeTeam && (
-          <div className="grid gap-5 p-4">
-            <div className={`plaza-turn-intro rounded-2xl px-5 py-7 text-center ${teamColorClass(activeTeam.id)}`}>
-              <p className="plaza-label">{t("alias.upNext")}</p>
-              <p className="mt-1 text-3xl font-bold">{activeTeam.name}</p>
+          <>
+            <div
+              className={`plaza-turn-intro rounded-3xl px-5 py-7 text-center ${teamColorClass(activeTeam.id)}`}
+            >
+              <p className="rm-eyebrow">{t("alias.upNext")}</p>
+              <p className="rm-display mt-1 text-[1.75rem] font-extrabold">{activeTeam.name}</p>
               <div className="plaza-word-card__divider mx-auto my-3" />
-              <p className="plaza-label">{t("alias.explains")}</p>
-              <p className="mt-1 text-xl font-semibold">
+              <p className="rm-eyebrow">{t("alias.explains")}</p>
+              <p className="mt-1 text-[1.1875rem] font-semibold">
                 {explainer?.nickname ?? "—"}
                 {explainer?.id === playerId && (
-                  <span className="plaza-muted ml-2 text-sm font-normal">{t("alias.thatsYou")}</span>
+                  <span className="plaza-muted ml-2 text-[0.84rem] font-normal">
+                    {t("alias.thatsYou")}
+                  </span>
                 )}
               </p>
             </div>
-            <p className="plaza-muted text-center text-sm">
+            <p className="plaza-muted text-center text-[0.84rem] leading-relaxed">
               {view.activeExplainerId === playerId
                 ? t("alias.explainerInstructions", view.settings.turnDurationSeconds)
                 : iAmOnActiveTeam
                   ? t("alias.guesserInstructions")
                   : t("alias.spectatorInstructions", activeTeam.name)}
             </p>
-            {(view.activeExplainerId === playerId || view.isHost) ? (
-              <button
-                type="button"
-                disabled={isSending}
-                onClick={() => void sendIntent({ kind: "start-turn" })}
-                className="plaza-button h-13 rounded-xl text-base font-semibold disabled:opacity-50"
-              >
-                {t("alias.startTurn")}
-              </button>
-            ) : (
-              <p className="plaza-muted text-center text-xs">
-                {t("alias.waitingForExplainer", explainer?.nickname ?? "—")}
-              </p>
-            )}
             {scoreboard}
-          </div>
+          </>
         )}
 
-        {/* ------------------------------------------------ explaining */}
-        {view.phase === "explaining" && (
-          <div className="grid gap-4 p-4">
-            <div
-              className={`plaza-alias-timer ${secondsLeft !== null && secondsLeft <= 10 ? "plaza-alias-timer--urgent" : ""}`}
-              role="timer"
-              aria-live="polite"
-            >
-              <span className="font-mono text-4xl font-bold tabular-nums">
-                {secondsLeft ?? "–"}
-              </span>
-              <span className="plaza-label">{t("alias.seconds")}</span>
-            </div>
-
-            {view.isExplainer ? (
-              <>
-                <div className="plaza-word-card plaza-word-card--crew rounded-2xl px-5 py-8 text-center">
-                  <p className="plaza-word-card__label">{t("alias.dontSayIt")}</p>
-                  <p className="plaza-word-card__word">{view.currentWord ?? "…"}</p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    disabled={isSending || (remainingMs !== null && remainingMs <= 0)}
-                    onClick={() => void sendIntent({ kind: "mark-word", result: "skipped" })}
-                    className="plaza-action-skip h-16 rounded-2xl text-lg font-bold disabled:opacity-50"
-                  >
-                    {t("alias.skip")}
-                    {view.settings.skipPenalty && <span className="block text-xs font-medium">-1</span>}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSending || (remainingMs !== null && remainingMs <= 0)}
-                    onClick={() => void sendIntent({ kind: "mark-word", result: "correct" })}
-                    className="plaza-action-correct h-16 rounded-2xl text-lg font-bold disabled:opacity-50"
-                  >
-                    {t("alias.correct")}
-                    <span className="block text-xs font-medium">+1</span>
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="plaza-word-card rounded-2xl px-5 py-8 text-center">
-                <p className="plaza-word-card__label">
-                  {activeTeam?.name} · {explainer?.nickname ?? "—"}
-                </p>
-                <p className="plaza-word-card__hidden">
-                  {iAmOnActiveTeam ? t("alias.guessOutLoud") : t("alias.watchAndWait")}
-                </p>
-              </div>
-            )}
-
-            <div className="flex items-center justify-center gap-4 text-sm" aria-live="polite">
-              <span className="plaza-status-valid rounded-full px-3 py-1 font-semibold">
-                ✓ {view.turnCorrect}
-              </span>
-              <span className="plaza-status-review rounded-full px-3 py-1 font-semibold">
-                ↷ {view.turnSkipped}
-              </span>
-            </div>
-
-            {(view.isExplainer || view.isHost) && (
-              <button
-                type="button"
-                disabled={isSending}
-                onClick={() => void sendIntent({ kind: "end-turn" })}
-                className="plaza-ghost-button h-10 rounded-lg text-sm font-medium disabled:opacity-50"
-              >
-                {t("alias.endTurnEarly")}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* ------------------------------------------------ turn review */}
+        {/* ------------------------------------------------------ turn review */}
         {view.phase === "turnReview" && (
-          <div className="grid gap-4 p-4">
-            <p className="plaza-muted text-sm">
+          <>
+            <p className="plaza-muted text-[0.84rem] leading-relaxed">
               {view.activeExplainerId === playerId || view.isHost
                 ? t("alias.reviewInstructionsEditor")
                 : t("alias.reviewInstructions")}
@@ -531,15 +583,15 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
                         disabled={!editable || isSending}
                         aria-pressed={correct}
                         onClick={() => void sendIntent({ kind: "toggle-word", index })}
-                        className={`flex h-12 w-full items-center justify-between rounded-xl border px-3.5 text-sm font-medium transition-colors ${
+                        className={`flex h-13 w-full items-center justify-between rounded-[0.875rem] border px-3.5 text-[0.84rem] font-medium transition-colors ${
                           correct
                             ? "border-[color-mix(in_srgb,var(--plaza-success)_45%,var(--plaza-line))] plaza-status-valid"
                             : "border-[var(--plaza-line)] plaza-status-review"
                         } ${editable ? "" : "cursor-default"}`}
                       >
                         <span className="min-w-0 truncate">{entry.word}</span>
-                        <span className="shrink-0 font-mono text-xs font-bold">
-                          {correct ? `+1` : view.settings.skipPenalty ? "-1" : "0"}
+                        <span className="rm-numeric shrink-0 text-[0.72rem] font-extrabold">
+                          {correct ? "+1" : view.settings.skipPenalty ? "-1" : "0"}
                         </span>
                       </button>
                     </li>
@@ -547,45 +599,35 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
                 })}
               </ul>
             ) : (
-              <p className="plaza-subtle rounded-xl px-4 py-6 text-center text-sm">
+              <p className="plaza-subtle rounded-[0.875rem] px-4 py-6 text-center text-[0.84rem]">
                 {t("alias.noWordsPlayed")}
               </p>
             )}
-            <div className="plaza-card flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold">
+            <div className="plaza-card flex items-center justify-between rounded-[0.875rem] px-4 py-3 text-[0.84rem] font-semibold">
               <span>{activeTeam?.name}</span>
-              <span className="font-mono text-lg">
-                {view.turnCorrect - (view.settings.skipPenalty ? view.turnSkipped : 0) >= 0 ? "+" : ""}
+              <span className="rm-numeric text-[1.0625rem]">
+                {view.turnCorrect - (view.settings.skipPenalty ? view.turnSkipped : 0) >= 0
+                  ? "+"
+                  : ""}
                 {view.turnCorrect - (view.settings.skipPenalty ? view.turnSkipped : 0)}
               </span>
             </div>
-            {(view.activeExplainerId === playerId || view.isHost) ? (
-              <button
-                type="button"
-                disabled={isSending}
-                onClick={() => void sendIntent({ kind: "confirm-turn" })}
-                className="plaza-button h-12 rounded-xl text-base font-semibold disabled:opacity-50"
-              >
-                {t("alias.confirmTurn")}
-              </button>
-            ) : (
-              <p className="plaza-muted text-center text-xs">{t("alias.waitingConfirm")}</p>
-            )}
             {scoreboard}
-          </div>
+          </>
         )}
 
-        {/* ------------------------------------------------ finished */}
+        {/* --------------------------------------------------------- finished */}
         {view.phase === "finished" && (
-          <div className="grid gap-5 p-4">
-            <div className="plaza-winner-card rounded-2xl px-5 py-8 text-center">
-              <p className="plaza-label">{t("alias.winner")}</p>
-              <p className="mt-2 text-3xl font-bold">
+          <>
+            <div className="plaza-winner-card rounded-3xl px-5 py-8 text-center">
+              <p className="rm-eyebrow">{t("alias.winner")}</p>
+              <p className="rm-display mt-2 text-[1.75rem] font-extrabold">
                 {view.winnerTeamIds.length > 1
                   ? t("alias.tie")
                   : view.teams.find((team) => team.id === view.winnerTeamIds[0])?.name ?? "—"}
               </p>
               {view.winnerTeamIds.length === 1 && (
-                <p className="plaza-muted mt-1 text-sm">
+                <p className="plaza-muted mt-1 text-[0.84rem]">
                   {view.teams
                     .find((team) => team.id === view.winnerTeamIds[0])
                     ?.playerIds.map((id) => playersById.get(id)?.nickname ?? "—")
@@ -594,35 +636,93 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
               )}
             </div>
             {scoreboard}
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                disabled={!view.isHost || isSending}
-                onClick={() => void sendIntent({ kind: "play-again" })}
-                className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
-              >
-                {view.isHost ? t("alias.playAgain") : t("gradovi.waitingForHost")}
-              </button>
-              <button
-                type="button"
-                disabled={!view.isHost || isSending}
-                onClick={() => void finishSession()}
-                className="plaza-button-secondary h-12 rounded-xl text-sm font-medium disabled:opacity-50"
-              >
-                {view.isHost ? t("gradovi.backToLaunchpad") : t("gradovi.waitingForHost")}
-              </button>
-            </div>
-            {!view.isHost && (
-              <p className="plaza-muted text-center text-xs">{t("gradovi.hostCloseNote")}</p>
-            )}
-          </div>
+          </>
         )}
-      </div>
 
-      {(view.phase === "turnIntro" || view.phase === "explaining") && myTeam === null && (
-        <p className="plaza-muted text-center text-xs">{t("alias.spectatorNote")}</p>
-      )}
-    </div>
+        {view.phase === "turnIntro" && myTeam === null && (
+          <p className="plaza-muted-2 text-center text-[0.72rem]">{t("alias.spectatorNote")}</p>
+        )}
+        </RoomContent>
+      </RoomBody>
+
+      <RoomBottomBar
+        note={
+          view.phase === "setup" && view.isHost
+            ? t("alias.teamRequirement", MIN_TEAM_SIZE)
+            : view.phase === "finished" && !view.isHost
+              ? t("gradovi.hostCloseNote")
+              : undefined
+        }
+      >
+        {view.phase === "setup" &&
+          (view.isHost ? (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void sendIntent({ kind: "start-game" })}
+              className="plaza-button rm-cta disabled:opacity-50"
+            >
+              {t("alias.startGame")}
+            </button>
+          ) : (
+            <WaitingNote>{t("alias.waitingForSetup")}</WaitingNote>
+          ))}
+
+        {view.phase === "turnIntro" &&
+          (view.activeExplainerId === playerId || view.isHost ? (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void sendIntent({ kind: "start-turn" })}
+              className="plaza-button rm-cta disabled:opacity-50"
+            >
+              {t("alias.startTurn")}
+            </button>
+          ) : (
+            <WaitingNote>
+              {t("alias.waitingForExplainer", explainer?.nickname ?? "—")}
+            </WaitingNote>
+          ))}
+
+        {view.phase === "turnReview" &&
+          (view.activeExplainerId === playerId || view.isHost ? (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void sendIntent({ kind: "confirm-turn" })}
+              className="plaza-button rm-cta disabled:opacity-50"
+            >
+              {t("alias.confirmTurn")}
+            </button>
+          ) : (
+            <WaitingNote>{t("alias.waitingConfirm")}</WaitingNote>
+          ))}
+
+        {view.phase === "finished" &&
+          (view.isHost ? (
+            <>
+              <button
+                type="button"
+                disabled={isSending}
+                onClick={() => void sendIntent({ kind: "play-again" })}
+                className="plaza-button rm-cta disabled:opacity-50"
+              >
+                {t("alias.playAgain")}
+              </button>
+              <button
+                type="button"
+                disabled={isSending}
+                onClick={() => void finishSession()}
+                className="plaza-ghost-button mx-auto rounded-lg px-3 py-1.5 text-[0.78rem] font-medium disabled:opacity-50"
+              >
+                {t("gradovi.backToLaunchpad")}
+              </button>
+            </>
+          ) : (
+            <WaitingNote>{t("gradovi.waitingForHost")}</WaitingNote>
+          ))}
+      </RoomBottomBar>
+    </>
   );
 }
 

@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
+import { RoomBody, RoomBottomBar, RoomContent } from "@/components/room-shell";
+import {
+  PhaseHeader,
+  PhaseSegments,
+  RoomError,
+  RoomLoading,
+  WaitingNote,
+} from "@/components/room-game-ui";
+import { StarIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
 import type { ImposteriIntent, ImposteriView } from "./types";
@@ -43,6 +52,9 @@ async function readError(response: Response): Promise<string> {
 function voteTotal(voteCounts: Record<string, number>): number {
   return Object.values(voteCounts).reduce((total, count) => total + count, 0);
 }
+
+// The four phases of a round, in order — drives the progress segments.
+const PHASE_ORDER = ["reveal", "clues", "vote", "result"] as const;
 
 export function ImposteriClient({
   roomCode,
@@ -285,166 +297,241 @@ export function ImposteriClient({
 
   if (!snapshot || !view) {
     return (
-      <div className="plaza-panel rounded-lg p-5">
-        <div className="plaza-skeleton h-5 w-32 rounded" />
-        <div className="mt-4 grid gap-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="plaza-skeleton h-11 rounded" />
-          ))}
-        </div>
-      </div>
+      <RoomBody>
+        <RoomLoading rows={4} />
+      </RoomBody>
     );
   }
 
-  const phaseTitle = t(`imposteri.phase.${view.phase}`);
   const result = view.result;
   const startPlayer = view.startPlayerId ? playersById.get(view.startPlayerId) : null;
   const isImpostor = view.myRole === "impostor";
   const roleHidden = view.isInRound && !roleRevealed;
+  const phaseIndex = PHASE_ORDER.indexOf(view.phase);
+  const totalVotes = result ? voteTotal(result.voteCounts) : 0;
+
+  // The role card: dealt face-down, flipped by its owner, hideable again. The
+  // face-down side is aria-hidden so the role never reaches the accessibility
+  // tree until it has actually been revealed.
+  const roleCard = (
+    <button
+      type="button"
+      aria-pressed={roleRevealed}
+      aria-label={roleRevealed ? t("imposteri.tapToHide") : t("imposteri.tapToReveal")}
+      onClick={() =>
+        setRevealedRound((current) => (current === view.round ? null : view.round))
+      }
+      className={`rm-role-card ${
+        roleRevealed
+          ? `rm-role-card--revealed ${isImpostor ? "rm-role-card--impostor" : ""}`
+          : ""
+      }`}
+    >
+      {roleHidden || !view.isInRound ? (
+        <>
+          <span className="rm-role-card__monogram" aria-hidden="true">
+            P
+          </span>
+          <span className="text-[0.94rem] font-semibold">
+            {view.isInRound ? t("imposteri.tapToReveal") : t("imposteri.notInRound")}
+          </span>
+          <span className="plaza-muted max-w-58 text-[0.78rem] leading-relaxed">
+            {t("imposteri.tapHideNote")}
+          </span>
+        </>
+      ) : (
+        <>
+          <span
+            className={`rm-chip mb-3.5 ${isImpostor ? "rm-chip--danger" : "rm-chip--valid"} uppercase tracking-[0.08em]`}
+          >
+            {t(`imposteri.role.${view.myRole}`)}
+          </span>
+          <span className="rm-role-card__label">{t("imposteri.category")}</span>
+          <span className="text-xl font-semibold">{view.category}</span>
+          <span className="rm-role-card__divider" aria-hidden="true" />
+          <span className="rm-role-card__label">
+            {isImpostor ? t("imposteri.impostorHintLabel") : t("imposteri.secretWord")}
+          </span>
+          {/* The impostor never receives the secret word — only the hint. */}
+          <span
+            className={
+              isImpostor
+                ? "plaza-muted max-w-58 text-[0.94rem] leading-relaxed"
+                : "rm-display text-[2.5rem] font-extrabold"
+            }
+          >
+            {isImpostor
+              ? view.impostorHint ?? t("imposteri.secretHidden")
+              : view.secretWord ?? t("imposteri.secretHidden")}
+          </span>
+          <span className="plaza-muted-2 mt-[1.125rem] text-xs">{t("imposteri.tapToHide")}</span>
+        </>
+      )}
+    </button>
+  );
 
   return (
     <>
-      <div className="plaza-panel rounded-lg">
-        <div className="plaza-divider border-b p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="plaza-label">{t("imposteri.round", view.round)}</p>
-              <h2 className="truncate text-lg font-semibold">{phaseTitle}</h2>
-            </div>
+      {/* --------------------------------------------------- 07 · round result */}
+      {view.phase === "result" && result ? (
+        <>
+          <div className={`rm-verdict ${result.crewWon ? "rm-verdict--crew" : "rm-verdict--impostor"}`}>
             <span
-              className={`rounded-lg px-3 py-2 text-sm font-medium ${
-                roleHidden
-                  ? "plaza-status-review"
-                  : isImpostor
-                    ? "plaza-status-invalid"
-                    : "plaza-status-valid"
-              }`}
+              className="rm-verdict__eyebrow"
+              style={{
+                color: result.crewWon ? "var(--plaza-success)" : "var(--plaza-danger)",
+              }}
             >
-              {roleHidden ? t("imposteri.roleHidden") : t(`imposteri.role.${view.myRole}`)}
+              {result.crewWon ? t("imposteri.crewWon") : t("imposteri.impostorsWon")}
+            </span>
+            <span className="rm-display text-[1.75rem] font-extrabold">
+              {result.crewWon ? t("imposteri.result.caught") : t("imposteri.result.escaped")}
+            </span>
+            <span className="plaza-muted text-[0.81rem]">
+              {result.ejectedPlayerId
+                ? t(
+                    "imposteri.ejectedWithVotes",
+                    playersById.get(result.ejectedPlayerId)?.nickname ?? "—",
+                    result.voteCounts[result.ejectedPlayerId] ?? 0,
+                    totalVotes,
+                  )
+                : result.timedOut
+                  ? t("imposteri.voteTimedOut")
+                  : t("imposteri.noEjection")}
             </span>
           </div>
-        </div>
 
-        {error && <div className="plaza-error border-b px-4 py-3 text-sm">{error}</div>}
+          <RoomBody className="p-5 sm:p-6">
+            <RoomContent className="gap-3.5">
+            {error && <RoomError message={error} />}
 
-        <div className="grid gap-5 p-4">
-          <section className="grid gap-3">
-            <p className="plaza-label">{t("imposteri.yourInfo")}</p>
-            {/* Dramatic role reveal: the card is dealt face-down and the
-                player flips it. Tapping again hides it from shoulder-surfers.
-                The face-down side carries aria-hidden so the role never
-                reaches the accessibility tree until flipped. */}
-            <div className="plaza-role-stage">
-              <button
-                type="button"
-                className="plaza-role-flip"
-                aria-pressed={roleRevealed}
-                aria-label={roleRevealed ? t("imposteri.tapToHide") : t("imposteri.tapToReveal")}
-                onClick={() =>
-                  setRevealedRound((current) =>
-                    current === view.round ? null : view.round,
-                  )
-                }
-              >
-                <span
-                  className="plaza-role-flip__side plaza-role-flip__front"
-                  aria-hidden={roleRevealed}
-                >
-                  <span className="plaza-role-flip__monogram" aria-hidden="true">
-                    P
-                  </span>
-                  <span className="plaza-role-flip__hint">{t("imposteri.tapToReveal")}</span>
+            <div className="flex gap-2.5">
+              <span className="rm-stat">
+                <span className="rm-eyebrow">{t("imposteri.secretWord")}</span>
+                <span className="text-[1.0625rem] font-semibold">{result.secretWord}</span>
+              </span>
+              <span className="rm-stat">
+                <span className="rm-eyebrow">{t("imposteri.impostors")}</span>
+                <span className="truncate text-[1.0625rem] font-semibold text-[var(--plaza-danger)]">
+                  {result.impostorIds
+                    .map((id) => playersById.get(id)?.nickname ?? "—")
+                    .join(", ")}
                 </span>
-                <span
-                  className="plaza-role-flip__side plaza-role-flip__back"
-                  aria-hidden={!roleRevealed}
-                >
-                  <span
-                    className={`plaza-word-card grid rounded-2xl px-5 py-7 text-center ${
-                      isImpostor ? "plaza-word-card--impostor" : "plaza-word-card--crew"
-                    }`}
-                  >
-                    <span className="plaza-word-card__label">{t("imposteri.category")}</span>
-                    <span className="plaza-word-card__category">{view.category}</span>
-                    {!isImpostor && view.secretWord && (
-                      <>
-                        <span className="plaza-word-card__divider" />
-                        <span className="plaza-word-card__label">
-                          {t("imposteri.secretWord")}
-                        </span>
-                        <span className="plaza-word-card__word">{view.secretWord}</span>
-                      </>
-                    )}
-                    {isImpostor && (
-                      <>
-                        <span className="plaza-word-card__divider" />
-                        <span className="plaza-word-card__label">
-                          {t("imposteri.impostorHintLabel")}
-                        </span>
-                        <span className="plaza-word-card__hint">
-                          {view.impostorHint ?? t("imposteri.secretHidden")}
-                        </span>
-                      </>
-                    )}
-                  </span>
-                </span>
-              </button>
+              </span>
             </div>
-            <p className="plaza-muted text-sm">
-              {!view.isInRound
-                ? t("imposteri.notInRound")
-                : roleHidden
-                  ? t("imposteri.tapToReveal")
-                  : isImpostor
-                    ? t("imposteri.impostorHint")
-                    : t("imposteri.crewHint")}
-            </p>
-          </section>
 
-          {view.phase === "reveal" && (
-            <HostAction
-              canAct={view.isHost}
-              disabled={isSending}
-              button={t("imposteri.startClues")}
-              waiting={t("imposteri.waitingHost")}
-              onClick={() => void sendIntent({ kind: "advance-phase" })}
-            />
-          )}
-
-          {view.phase === "clues" && (
-            <section className="grid gap-3">
-              <p className="plaza-muted text-sm">{t("imposteri.cluesOfflineHint")}</p>
-              {startPlayer && (
-                <div className="plaza-card rounded-lg px-4 py-3">
-                  <p className="plaza-label mb-1">{t("imposteri.firstPlayer")}</p>
-                  <p className="text-base font-semibold">
-                    {startPlayer.nickname}
-                    {startPlayer.id === playerId && (
-                      <span className="plaza-muted-2 ml-2 text-xs">{t("gradovi.you")}</span>
-                    )}
-                  </p>
-                </div>
-              )}
-              <HostAction
-                canAct={view.isHost}
-                disabled={isSending}
-                button={t("imposteri.startVote")}
-                waiting={t("imposteri.waitingHostVote")}
-                onClick={() => void sendIntent({ kind: "advance-phase" })}
-              />
+            <section className="plaza-panel grid gap-3 rounded-[1.125rem] p-4">
+              <h3 className="rm-eyebrow">{t("imposteri.votes")}</h3>
+              <ul className="grid gap-2.5">
+                {snapshot.players.map((player) => {
+                  const count = result.voteCounts[player.id] ?? 0;
+                  const share = totalVotes > 0 ? (count / totalVotes) * 100 : 0;
+                  const ejected = player.id === result.ejectedPlayerId;
+                  return (
+                    <li key={player.id} className="flex items-center gap-2.5">
+                      <span
+                        className={`w-[4.375rem] shrink-0 truncate text-[0.81rem] font-medium ${
+                          count === 0 ? "plaza-muted" : ""
+                        }`}
+                      >
+                        {player.nickname}
+                      </span>
+                      <span className="rm-track flex-1">
+                        <span
+                          className={`rm-track__fill ${ejected ? "rm-track__fill--danger" : ""}`}
+                          style={{ width: `${share}%` }}
+                        />
+                      </span>
+                      <span
+                        className={`rm-numeric w-6 text-right text-xs ${
+                          count === 0 ? "plaza-muted-2" : "plaza-muted"
+                        }`}
+                      >
+                        {count}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="plaza-muted-2 text-[0.72rem]">
+                {t("imposteri.sessionNote", view.round)}
+              </p>
             </section>
-          )}
+            </RoomContent>
+          </RoomBody>
 
-          {view.phase === "vote" && (
-            <section className="grid gap-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="plaza-label">{t("imposteri.vote")}</h3>
-                <span className="plaza-muted text-xs">
-                  {t("imposteri.submitted", view.votedPlayerIds.length, snapshot.players.length)}
-                </span>
+          <RoomBottomBar>
+            {view.isHost ? (
+              <>
+                <button
+                  type="button"
+                  disabled={isSending}
+                  onClick={() => void sendIntent({ kind: "start-round" })}
+                  className="plaza-button rm-cta disabled:opacity-50"
+                >
+                  {t("imposteri.nextRound")}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSending}
+                  onClick={() => void finishSession()}
+                  className="plaza-ghost-button mx-auto rounded-lg px-3 py-1.5 text-[0.78rem] font-medium disabled:opacity-50"
+                >
+                  {t("imposteri.backToLobby")}
+                </button>
+              </>
+            ) : (
+              <WaitingNote>{t("imposteri.waitingHost")}</WaitingNote>
+            )}
+          </RoomBottomBar>
+        </>
+      ) : (
+        <>
+          <PhaseHeader
+            eyebrow={t("imposteri.round", view.round)}
+            title={t(`imposteri.phase.${view.phase}`)}
+            right={
+              <PhaseSegments
+                total={PHASE_ORDER.length}
+                activeIndex={phaseIndex}
+                label={t(`imposteri.phase.${view.phase}`)}
+              />
+            }
+          />
+
+          {/* ------------------------------------------------ 06 · voting */}
+          {view.phase === "vote" ? (
+            <>
+              <div className="rm-content grid gap-3.5 px-5 pt-3.5 sm:px-6">
+                <div className="plaza-panel flex items-center gap-3.5 rounded-[1.125rem] p-4">
+                  <span
+                    className={`rm-timer-ring ${voteUrgent ? "rm-timer-ring--urgent" : ""}`}
+                    role="timer"
+                    aria-live="polite"
+                    aria-label={`${t("imposteri.timeLeft")}: ${secondsLeft ?? "—"}`}
+                  >
+                    {secondsLeft ?? "—"}
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-base font-semibold">{t("imposteri.voteNow")}</span>
+                    <span className="plaza-muted text-[0.78rem] leading-snug">
+                      {t("imposteri.voteHint")}
+                    </span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="rm-eyebrow">
+                    {t("imposteri.submitted", view.votedPlayerIds.length, snapshot.players.length)}
+                  </span>
+                  <span className="plaza-muted-2 text-[0.69rem]">
+                    {t("imposteri.voteSecret")}
+                  </span>
+                </div>
               </div>
-              <p className="plaza-muted text-sm">{t("imposteri.voteHint")}</p>
-              <div className="grid gap-2 sm:grid-cols-2">
+
+              <RoomBody className="px-5 pt-3.5 sm:px-6">
+                <RoomContent className="gap-2.5 pb-5">
+                {error && <RoomError message={error} />}
                 {snapshot.players.map((player) => {
                   const selected = view.myVote === player.id;
                   const isMe = player.id === playerId;
@@ -455,114 +542,98 @@ export function ImposteriClient({
                       type="button"
                       disabled={isSending || !view.isInRound || isMe}
                       onClick={() => void sendIntent({ kind: "cast-vote", targetId: player.id })}
-                      className={`flex h-11 items-center justify-between rounded-lg border px-3 text-left text-sm font-medium transition-colors disabled:opacity-45 ${
-                        selected
-                          ? "border-[var(--plaza-accent)] bg-[var(--plaza-accent-soft)]"
-                          : "plaza-card hover:border-[var(--plaza-line-strong)]"
+                      className={`rm-row ${selected ? "rm-row--picked" : ""} ${
+                        isMe ? "rm-row--self" : ""
                       }`}
                     >
-                      <span className="truncate">
+                      <span className="rm-avatar" aria-hidden="true">
+                        {player.isHost ? <StarIcon size={12} /> : player.nickname.slice(0, 1)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-[0.9rem] font-medium">
                         {player.nickname}
                         {isMe && (
-                          <span className="plaza-muted-2 ml-1 text-xs">{t("gradovi.you")}</span>
+                          <span className="plaza-muted ml-1.5 text-[0.69rem] font-normal">
+                            {t("gradovi.you")}
+                          </span>
                         )}
                       </span>
-                      {hasVoted && !isMe && (
-                        <span className="plaza-muted-2 ml-2 text-[0.7rem] uppercase tracking-wide">
-                          {t("imposteri.voted")}
+                      {selected ? (
+                        <span className="rm-chip shrink-0 bg-[var(--plaza-accent)] text-[var(--plaza-accent-ink)]">
+                          {t("imposteri.yourVote")}
                         </span>
+                      ) : (
+                        hasVoted &&
+                        !isMe && (
+                          <span className="plaza-muted-2 shrink-0 text-[0.66rem] uppercase tracking-[0.1em]">
+                            {t("imposteri.voted")}
+                          </span>
+                        )
                       )}
                     </button>
                   );
                 })}
-              </div>
-            </section>
-          )}
-
-          {view.phase === "result" && result && (
-            <section className="grid gap-4">
-              <div
-                className={`rounded-lg p-4 ${
-                  result.crewWon ? "plaza-status-valid" : "plaza-status-invalid"
-                }`}
-              >
-                <h3 className="font-semibold">
-                  {result.crewWon ? t("imposteri.crewWon") : t("imposteri.impostorsWon")}
-                </h3>
-                <p className="mt-1 text-sm">
-                  {result.ejectedPlayerId
-                    ? t(
-                        "imposteri.ejected",
-                        playersById.get(result.ejectedPlayerId)?.nickname ?? "-",
-                      )
-                    : result.timedOut
-                      ? t("imposteri.voteTimedOut")
-                      : t("imposteri.noEjection")}
+                <p className="plaza-subtle mt-2 rounded-[0.875rem] border border-[var(--plaza-line)] px-3.5 py-3 text-[0.75rem] leading-relaxed text-[var(--plaza-muted)]">
+                  {t("imposteri.noMajorityNote")}
                 </p>
-              </div>
+                </RoomContent>
+              </RoomBody>
+            </>
+          ) : (
+            /* --------------------------------- 05 · role card, and clues */
+            <>
+              <RoomBody center className="p-5 sm:p-6">
+                <RoomContent className="items-center gap-[1.125rem]">
+                {error && <RoomError message={error} />}
+                {roleCard}
+                <p className="plaza-muted text-center text-[0.81rem] leading-relaxed">
+                  {isImpostor ? t("imposteri.impostorHint") : t("imposteri.crewHint")}
+                </p>
+                {view.phase === "clues" && (
+                  <>
+                    <p className="plaza-muted-2 text-center text-[0.78rem] leading-relaxed">
+                      {t("imposteri.cluesOfflineHint")}
+                    </p>
+                    {startPlayer && (
+                      <div className="plaza-panel flex items-center justify-between gap-3 rounded-[1.125rem] px-4 py-3">
+                        <span className="rm-eyebrow">{t("imposteri.firstPlayer")}</span>
+                        <span className="truncate text-[0.94rem] font-semibold">
+                          {startPlayer.nickname}
+                          {startPlayer.id === playerId && (
+                            <span className="plaza-muted-2 ml-1.5 text-xs font-normal">
+                              {t("gradovi.you")}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+                </RoomContent>
+              </RoomBody>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <InfoBlock label={t("imposteri.secretWord")} value={result.secretWord} />
-                <InfoBlock
-                  label={t("imposteri.impostors")}
-                  value={result.impostorIds
-                    .map((id) => playersById.get(id)?.nickname ?? "-")
-                    .join(", ")}
-                />
-              </div>
-
-              <section>
-                <h3 className="plaza-label mb-2">{t("imposteri.votes")}</h3>
-                <ul className="grid gap-2">
-                  {snapshot.players.map((player) => (
-                    <li
-                      key={player.id}
-                      className="plaza-subtle flex h-10 items-center justify-between rounded-lg px-3 text-sm"
-                    >
-                      <span className="min-w-0 truncate">{player.nickname}</span>
-                      <span className="plaza-muted font-mono text-xs">
-                        {result.voteCounts[player.id] ?? 0}/{voteTotal(result.voteCounts)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  disabled={!view.isHost || isSending}
-                  onClick={() => void sendIntent({ kind: "start-round" })}
-                  className="plaza-button h-11 rounded-lg text-sm font-medium disabled:opacity-50"
-                >
-                  {view.isHost ? t("imposteri.nextRound") : t("imposteri.waitingHost")}
-                </button>
-                <button
-                  type="button"
-                  disabled={!view.isHost || isSending}
-                  onClick={() => void finishSession()}
-                  className="plaza-button-secondary h-11 rounded-lg text-sm font-medium disabled:opacity-50"
-                >
-                  {view.isHost ? t("gradovi.backToLaunchpad") : t("imposteri.waitingHost")}
-                </button>
-              </div>
-            </section>
+              <RoomBottomBar note={t("imposteri.hostPacingNote", snapshot.players.length)}>
+                {view.isHost ? (
+                  <button
+                    type="button"
+                    disabled={isSending}
+                    onClick={() => void sendIntent({ kind: "advance-phase" })}
+                    className="plaza-button rm-cta disabled:opacity-50"
+                  >
+                    {view.phase === "reveal"
+                      ? t("imposteri.startClues")
+                      : t("imposteri.startVote")}
+                  </button>
+                ) : (
+                  <WaitingNote>
+                    {view.phase === "reveal"
+                      ? t("imposteri.waitingHost")
+                      : t("imposteri.waitingHostVote")}
+                  </WaitingNote>
+                )}
+              </RoomBottomBar>
+            </>
           )}
-        </div>
-
-        <div className="plaza-divider plaza-muted-2 border-t px-4 py-3 text-xs">
-          {snapshot.players.map((player) => player.nickname).join(", ")}
-        </div>
-      </div>
-
-      {view.phase === "vote" && secondsLeft !== null && (
-        <div
-          className={`plaza-vote-timer ${voteUrgent ? "plaza-vote-timer--urgent" : ""}`}
-          aria-live="polite"
-        >
-          <span className="plaza-vote-timer__label">{t("imposteri.timeLeft")}</span>
-          <span className="plaza-vote-timer__value">{secondsLeft}s</span>
-        </div>
+        </>
       )}
 
       {overlay && (
@@ -582,39 +653,3 @@ export function ImposteriClient({
     </>
   );
 }
-
-function HostAction({
-  canAct,
-  disabled,
-  button,
-  waiting,
-  onClick,
-}: {
-  canAct: boolean;
-  disabled: boolean;
-  button: string;
-  waiting: string;
-  onClick: () => void;
-}) {
-  if (!canAct) return <p className="plaza-muted text-sm">{waiting}</p>;
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="plaza-button h-11 rounded-lg text-sm font-medium disabled:opacity-50"
-    >
-      {button}
-    </button>
-  );
-}
-
-function InfoBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="plaza-card rounded-lg p-3">
-      <p className="plaza-label mb-1">{label}</p>
-      <p className="font-medium">{value}</p>
-    </div>
-  );
-}
-
