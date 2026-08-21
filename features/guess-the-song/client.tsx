@@ -8,17 +8,28 @@ import { usePreferences } from "@/components/preferences-provider";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
 import {
+  CLIP_LENGTH_OPTIONS,
   COUNTDOWN_SECONDS,
+  GUESS_DURATION_STEP_SECONDS,
   MAX_GUESS_DURATION_SECONDS,
   MAX_SONG_ROUNDS,
   MIN_GUESS_DURATION_SECONDS,
   MIN_SONG_ROUNDS,
   SONG_SOURCE_PRESETS,
+  clipLengthMultiplier,
 } from "./types";
 import type { AnswerMode, GuessTheSongIntent, GuessTheSongView } from "./types";
 
 const GAME_ID = "guess-the-song";
-const AUDIO_UNLOCKED_KEY = "plaza:song-audio-unlocked";
+
+// A browser's autoplay unlock is bound to the specific <audio> element that
+// received the gesture, and it does not survive a page load — so it cannot be
+// cached in localStorage. One element stays mounted for the whole game and this
+// silent clip gives it something to play before the first preview arrives.
+const VOLUME_KEY = "plaza:song-volume";
+const DEFAULT_VOLUME = 0.8;
+
+const SILENT_CLIP = "data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA";
 
 type PlayerSummary = {
   id: string;
@@ -90,13 +101,13 @@ export function GuessTheSongClient({
   const [selectedPreset, setSelectedPreset] = useState<string | null>(SONG_SOURCE_PRESETS[0].id);
   const [customQuery, setCustomQuery] = useState("");
   const [now, setNow] = useState(() => Date.now());
-  const [audioUnlocked, setAudioUnlocked] = useState(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      return window.localStorage.getItem(AUDIO_UNLOCKED_KEY) === "1";
-    } catch {
-      return false;
-    }
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  // Volume is a plain preference and *is* safe to persist — unlike the autoplay
+  // unlock, it carries no per-element browser state.
+  const [volume, setVolume] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_VOLUME;
+    const stored = Number(window.localStorage.getItem(VOLUME_KEY));
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : DEFAULT_VOLUME;
   });
   const endRoundAttempted = useRef<number | null>(null);
   const countdownAttempted = useRef<number | null>(null);
@@ -104,26 +115,35 @@ export function GuessTheSongClient({
   const playbackStartedAt = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // One real tap plays+immediately pauses a silent clip, which satisfies mobile
-  // autoplay policies for the rest of the session so later rounds can autoplay.
+  // One real tap plays the mounted element, which satisfies mobile autoplay
+  // policy for the rest of the page session so later rounds can autoplay.
+  // Only a play() that actually resolves counts as unlocked — marking it
+  // optimistically hides the fallback button and leaves the round silent.
   const unlockAudio = useCallback(() => {
-    setAudioUnlocked(true);
-    try {
-      window.localStorage.setItem(AUDIO_UNLOCKED_KEY, "1");
-    } catch {
-      // ignore
-    }
     const audio = audioRef.current;
     if (!audio) return;
     const playAttempt = audio.play();
-    if (playAttempt && typeof playAttempt.then === "function") {
-      playAttempt
-        .then(() => audio.pause())
-        .catch(() => {
-          // Autoplay was blocked; playback will retry from the countdown timestamp.
-        });
+    if (!playAttempt || typeof playAttempt.then !== "function") {
+      setAudioUnlocked(true);
+      return;
     }
+    playAttempt
+      .then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        setAudioUnlocked(true);
+      })
+      .catch(() => setAudioUnlocked(false));
   }, []);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+    try {
+      window.localStorage.setItem(VOLUME_KEY, String(volume));
+    } catch {
+      // a full/blocked storage quota must not break playback
+    }
+  }, [volume]);
 
   const loadState = useCallback(async () => {
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/state`, {
@@ -293,6 +313,8 @@ export function GuessTheSongClient({
   // Load the clip during the countdown, then fire playback exactly at
   // playbackStartAt so every unlocked device starts the same instant.
   const previewUrl = view?.previewUrl ?? null;
+  const clipStart = view?.clipStartSeconds ?? 0;
+  const clipLengthSeconds = view?.settings.clipLengthSeconds ?? null;
   useEffect(() => {
     if (!previewUrl || !audioRef.current) return;
     audioRef.current.load();
@@ -305,11 +327,49 @@ export function GuessTheSongClient({
     if (playbackStartedAt.current === view.playbackStartAt) return;
     playbackStartedAt.current = view.playbackStartAt;
     const audio = audioRef.current;
-    audio.currentTime = 0;
-    void audio.play().catch(() => {
-      // Blocked despite the earlier unlock tap; the visible play control still works.
-    });
-  }, [audioUnlocked, previewUrl, view?.phase, view?.playbackStartAt]);
+
+    const start = () => {
+      audio.currentTime = clipStart;
+      void audio.play().catch(() => {
+        // Blocked despite the unlock tap — surface the manual play control again.
+        setAudioUnlocked(false);
+      });
+    };
+
+    // Round one starts on a cold buffer, so the clip is often not playable yet
+    // at playbackStartAt. Waiting for `canplay` costs a beat instead of silence.
+    if (audio.readyState >= 3) {
+      start();
+      return;
+    }
+    audio.addEventListener("canplay", start, { once: true });
+    return () => audio.removeEventListener("canplay", start);
+  }, [audioUnlocked, clipStart, previewUrl, view?.phase, view?.playbackStartAt]);
+
+  // Stop at the host's clip length. `timeupdate` tracks real playback position,
+  // so a slow start doesn't cut the clip short.
+  useEffect(() => {
+    if (view?.phase !== "playing" || clipLengthSeconds === null || !audioRef.current) return;
+    const audio = audioRef.current;
+    const stopAtLimit = () => {
+      if (audio.currentTime < clipStart + clipLengthSeconds) return;
+      audio.pause();
+    };
+    audio.addEventListener("timeupdate", stopAtLimit);
+    return () => audio.removeEventListener("timeupdate", stopAtLimit);
+  }, [clipLengthSeconds, clipStart, view?.phase]);
+
+  // Replaying is the whole point of a short clip — you cannot be expected to
+  // name a 2-second snippet you only ever hear once.
+  const replayClip = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = clipStart;
+    const attempt = audio.play();
+    if (attempt && typeof attempt.then === "function") {
+      attempt.then(() => setAudioUnlocked(true)).catch(() => setAudioUnlocked(false));
+    }
+  }, [clipStart]);
 
   // Cut the clip the instant the round stops being "playing" (round-end,
   // host end-round, next round's countdown) so it never bleeds into review.
@@ -491,7 +551,7 @@ export function GuessTheSongClient({
                       unit={t("gradovi.settings.seconds")}
                       min={MIN_GUESS_DURATION_SECONDS}
                       max={MAX_GUESS_DURATION_SECONDS}
-                      step={15}
+                      step={GUESS_DURATION_STEP_SECONDS}
                       disabled={isSending || isStarting}
                       onChange={(value) =>
                         void actionIntent({
@@ -500,6 +560,45 @@ export function GuessTheSongClient({
                         })
                       }
                     />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <span className="plaza-label">{t("song.clipLength")}</span>
+                    <div
+                      className="grid grid-cols-4 gap-2"
+                      role="group"
+                      aria-label={t("song.clipLength")}
+                    >
+                      {CLIP_LENGTH_OPTIONS.map((option) => {
+                        const multiplier = clipLengthMultiplier(option);
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            aria-pressed={view.settings.clipLengthSeconds === option}
+                            disabled={isSending || isStarting}
+                            onClick={() =>
+                              void actionIntent({
+                                kind: "update-settings",
+                                settings: { clipLengthSeconds: option },
+                              })
+                            }
+                            className={`plaza-select-card grid h-11 place-items-center rounded-xl text-xs font-semibold disabled:opacity-40 ${
+                              view.settings.clipLengthSeconds === option
+                                ? "plaza-select-card--selected"
+                                : ""
+                            }`}
+                          >
+                            <span>{option}s</span>
+                            {multiplier > 1 && (
+                              <span className="plaza-muted text-[10px] leading-none">
+                                ×{multiplier}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="plaza-muted text-xs">{t("song.clipLengthHint")}</p>
                   </div>
                   <div className="grid gap-1.5">
                     <span className="plaza-label">{t("song.answerMode")}</span>
@@ -543,14 +642,10 @@ export function GuessTheSongClient({
           </div>
         )}
 
-        {/* Mounted once across countdown/playing/round-end so the same element
-            keeps buffering + playing without remounting between phases. */}
-        {previewUrl &&
-          (view.phase === "countdown" ||
-            view.phase === "playing" ||
-            view.phase === "round-end") && (
-            <audio ref={audioRef} preload="auto" className="hidden" src={previewUrl} />
-          )}
+        {/* Mounted in every phase and never remounted: the autoplay unlock is
+            bound to this element, so it has to exist before the first tap and
+            survive every phase change. Swapping `src` keeps the unlock. */}
+        <audio ref={audioRef} preload="auto" className="hidden" src={previewUrl ?? SILENT_CLIP} />
 
         {/* ------------------------------------------------ countdown */}
         {view.phase === "countdown" && (
@@ -614,20 +709,34 @@ export function GuessTheSongClient({
                 )}
               </div>
               <Equalizer active={view.phase === "playing"} />
-              {view.phase === "playing" && !audioUnlocked && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    unlockAudio();
-                    const audio = audioRef.current;
-                    if (!audio) return;
-                    audio.currentTime = 0;
-                    void audio.play().catch(() => {});
-                  }}
-                  className="plaza-button mt-4 h-11 w-full rounded-xl text-sm font-semibold"
-                >
-                  ▶ {t("song.tapToPlay")}
-                </button>
+              {view.phase === "playing" && (
+                <div className="mt-4 grid gap-3">
+                  <button
+                    type="button"
+                    onClick={replayClip}
+                    className="plaza-button h-11 w-full rounded-xl text-sm font-semibold"
+                  >
+                    {audioUnlocked
+                      ? `↻ ${t("song.replay")} (${clipLengthSeconds}s)`
+                      : `▶ ${t("song.tapToPlay")}`}
+                  </button>
+                  <label className="flex items-center gap-3">
+                    <span className="plaza-muted text-xs">{t("song.volume")}</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={volume}
+                      aria-label={t("song.volume")}
+                      onChange={(event) => setVolume(Number(event.target.value))}
+                      className="plaza-range h-6 flex-1"
+                    />
+                    <span className="plaza-muted w-9 text-right font-mono text-xs tabular-nums">
+                      {Math.round(volume * 100)}%
+                    </span>
+                  </label>
+                </div>
               )}
             </div>
 

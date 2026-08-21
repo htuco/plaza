@@ -4110,3 +4110,43 @@ body.plaza-time-warning::before {
     transform: scaleY(0.55);
   }
 }
+
+/* Volume slider for Guess the Song. Native range styling is inconsistent
+   across mobile browsers, so the track and thumb are drawn explicitly. */
+.plaza-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  touch-action: none;
+}
+
+.plaza-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--plaza-line);
+}
+
+.plaza-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--plaza-line);
+}
+
+.plaza-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -7px;
+  height: 20px;
+  width: 20px;
+  border-radius: 999px;
+  background: var(--plaza-accent);
+  border: 2px solid var(--plaza-surface);
+}
+
+.plaza-range::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border: 2px solid var(--plaza-surface);
+  border-radius: 999px;
+  background: var(--plaza-accent);
+}

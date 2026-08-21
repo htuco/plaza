@@ -1,15 +1,21 @@
 import type { GameModule } from "@/features/registry";
 import {
   ARTIST_POINTS,
+  CLIP_LENGTH_OPTIONS,
   COUNTDOWN_SECONDS,
+  DEFAULT_CLIP_LENGTH_SECONDS,
   DEFAULT_SONG_SETTINGS,
   FIRST_MATCH_BONUS,
   MAX_GUESS_DURATION_SECONDS,
   MAX_SONG_ROUNDS,
   MIN_GUESS_DURATION_SECONDS,
   MIN_SONG_ROUNDS,
+  PREVIEW_USABLE_SECONDS,
   ROUND_END_PAUSE_SECONDS,
+  SPEED_BONUS_MAX,
   TITLE_POINTS,
+  clipLengthMultiplier,
+  suggestedGuessDuration,
 } from "./types";
 import type {
   AnswerMode,
@@ -62,15 +68,31 @@ function normalizeSettings(value: unknown): GuessTheSongSettings {
     typeof raw.guessDurationSeconds === "number" && Number.isFinite(raw.guessDurationSeconds)
       ? Math.floor(raw.guessDurationSeconds)
       : DEFAULT_SONG_SETTINGS.guessDurationSeconds;
+  const guessDurationSeconds = clamp(
+    duration,
+    MIN_GUESS_DURATION_SECONDS,
+    MAX_GUESS_DURATION_SECONDS,
+  );
+  const requestedClip =
+    typeof raw.clipLengthSeconds === "number" && Number.isFinite(raw.clipLengthSeconds)
+      ? Math.floor(raw.clipLengthSeconds)
+      : DEFAULT_CLIP_LENGTH_SECONDS;
   return {
     totalRounds: clamp(rounds, MIN_SONG_ROUNDS, MAX_SONG_ROUNDS),
-    guessDurationSeconds: clamp(
-      duration,
-      MIN_GUESS_DURATION_SECONDS,
-      MAX_GUESS_DURATION_SECONDS,
-    ),
+    guessDurationSeconds,
+    // Playing past the buzzer makes no sense, so a clip never outlasts the
+    // guess window; snap to the nearest allowed option at or below the cap.
+    clipLengthSeconds: nearestClipLength(requestedClip, guessDurationSeconds),
     answerMode: isAnswerMode(raw.answerMode) ? raw.answerMode : DEFAULT_SONG_SETTINGS.answerMode,
   };
+}
+
+function nearestClipLength(requested: number, guessDurationSeconds: number): number {
+  const allowed = CLIP_LENGTH_OPTIONS.filter((option) => option <= guessDurationSeconds);
+  const candidates = allowed.length > 0 ? allowed : [CLIP_LENGTH_OPTIONS[0]];
+  return candidates.reduce((best, option) =>
+    Math.abs(option - requested) < Math.abs(best - requested) ? option : best,
+  );
 }
 
 function normalizePhase(value: unknown): Phase {
@@ -129,6 +151,10 @@ export function normalizeSongState(state: GuessTheSongState): GuessTheSongState 
     roundIndex:
       typeof stored.roundIndex === "number" && stored.roundIndex >= 0
         ? Math.floor(stored.roundIndex)
+        : 0,
+    clipStartSeconds:
+      typeof stored.clipStartSeconds === "number" && stored.clipStartSeconds >= 0
+        ? stored.clipStartSeconds
         : 0,
     playbackStartAt: typeof stored.playbackStartAt === "number" ? stored.playbackStartAt : null,
     roundDeadlineAt: typeof stored.roundDeadlineAt === "number" ? stored.roundDeadlineAt : null,
@@ -189,6 +215,16 @@ function playerDone(state: GuessTheSongState, progress: PlayerRoundProgress): bo
   return progress.titleMatched && progress.artistMatched;
 }
 
+// Answer early, keep more of the bonus. Uses the server-held deadline and the
+// server's clock — a client-reported timestamp would be trivially forgeable.
+function speedBonus(state: GuessTheSongState, now: number): number {
+  if (state.roundDeadlineAt === null) return 0;
+  const windowMs = state.settings.guessDurationSeconds * 1000;
+  if (windowMs <= 0) return 0;
+  const remainingFraction = clamp((state.roundDeadlineAt - now) / windowMs, 0, 1);
+  return Math.round(SPEED_BONUS_MAX * remainingFraction);
+}
+
 function endRound(state: GuessTheSongState, now: number): GuessTheSongState {
   return {
     ...state,
@@ -198,6 +234,15 @@ function endRound(state: GuessTheSongState, now: number): GuessTheSongState {
   };
 }
 
+// A short clip taken from 0:00 every round would always be the same intro, so
+// the server picks where in the preview it starts. It lives in state (not on
+// each client) so every device plays the identical segment.
+export function pickClipStart(clipLengthSeconds: number): number {
+  const room = PREVIEW_USABLE_SECONDS - clipLengthSeconds;
+  if (room <= 0) return 0;
+  return Math.floor(Math.random() * room);
+}
+
 // Every round (including the first) opens with a shared 3-2-1 countdown so
 // playback starts at the same instant on every device.
 function startCountdown(state: GuessTheSongState, roundIndex: number, now: number): GuessTheSongState {
@@ -205,6 +250,7 @@ function startCountdown(state: GuessTheSongState, roundIndex: number, now: numbe
     ...state,
     phase: "countdown",
     roundIndex,
+    clipStartSeconds: pickClipStart(state.settings.clipLengthSeconds),
     playbackStartAt: now + COUNTDOWN_SECONDS * 1000,
     roundDeadlineAt: null,
     roundEndAdvanceAt: null,
@@ -231,6 +277,7 @@ export const guessTheSongModule: GameModule<
     playlistLabel: null,
     tracks: [],
     roundIndex: 0,
+    clipStartSeconds: 0,
     playbackStartAt: null,
     roundDeadlineAt: null,
     roundEndAdvanceAt: null,
@@ -252,9 +299,16 @@ export const guessTheSongModule: GameModule<
     if (intent.kind === "update-settings") {
       if (!isHost) throw new Error("Only the host can change settings.");
       if (current.phase !== "setup") throw new Error("Settings are locked after the game starts.");
+      const requested = intent.settings ?? {};
+      // Changing the clip retunes the guess window to suit it, unless the host
+      // set both at once — otherwise a 2s clip keeps a 50s countdown of dead air.
+      const retuned =
+        requested.clipLengthSeconds !== undefined && requested.guessDurationSeconds === undefined
+          ? { guessDurationSeconds: suggestedGuessDuration(requested.clipLengthSeconds) }
+          : {};
       return {
         ...current,
-        settings: normalizeSettings({ ...current.settings, ...intent.settings }),
+        settings: normalizeSettings({ ...current.settings, ...requested, ...retuned }),
       };
     }
 
@@ -279,11 +333,14 @@ export const guessTheSongModule: GameModule<
       if (!hitTitle && !hitArtist) throw new Error("Wrong guess.");
 
       let points = (hitTitle ? TITLE_POINTS : 0) + (hitArtist ? ARTIST_POINTS : 0);
+      points += speedBonus(current, ctx.now.getTime());
       let firstMatchPlayerId = current.firstMatchPlayerId;
       if (firstMatchPlayerId === null) {
         firstMatchPlayerId = ctx.playerId;
         points += FIRST_MATCH_BONUS;
       }
+      // Shorter clip = harder round = bigger payout.
+      points = Math.round(points * clipLengthMultiplier(current.settings.clipLengthSeconds));
 
       const nextProgress: Record<string, PlayerRoundProgress> = {
         ...current.progress,
@@ -358,6 +415,7 @@ export const guessTheSongModule: GameModule<
       playlistLabel: null,
       tracks: [],
       roundIndex: 0,
+      clipStartSeconds: 0,
       playbackStartAt: null,
       roundDeadlineAt: null,
       roundEndAdvanceAt: null,
@@ -386,6 +444,7 @@ export const guessTheSongModule: GameModule<
           current.phase === "round-end")
           ? track.previewUrl
           : null,
+      clipStartSeconds: current.clipStartSeconds,
       playbackStartAt: current.playbackStartAt,
       roundDeadlineAt: current.roundDeadlineAt,
       roundEndAdvanceAt: current.roundEndAdvanceAt,
