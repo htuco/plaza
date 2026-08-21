@@ -1,10 +1,16 @@
 import { notFound, redirect } from "next/navigation";
 import { GameRoomHeader } from "@/components/game-room-header";
+import { RoomScreen } from "@/components/room-shell";
 import { getRoomByCode } from "@/lib/rooms/server";
 import { createClient } from "@/lib/supabase/server";
 import { GAMES } from "@/features/registry";
 import { getGameModule } from "@/features";
 import type { GameId } from "@/lib/db/schema";
+
+// Games whose screen has two jobs at once — a board or a form plus the running
+// standings — get the wider desktop shell and lay out in two panes. The rest
+// stay a single focal column at every size.
+const WIDE_SHELL_GAMES: readonly GameId[] = ["asocijacije", "gradovi-i-sela", "higher-lower"];
 
 export default async function GamePage({
   params,
@@ -28,12 +34,13 @@ export default async function GamePage({
   const gameModule = getGameModule(gameId);
   const Client = gameModule.ClientComponent;
 
+  // The room shell owns the top bar; each game client renders the body and,
+  // where the screen has an action, its own bottom bar — so the primary action
+  // always sits in the same place across games.
   return (
-    <div className="plaza-page flex flex-1 flex-col">
-      <main className="mx-auto w-full max-w-3xl flex-1 px-5 pb-8 pt-14 sm:pt-8">
-        <GameRoomHeader gameId={gameId} roomCode={room.code} isHost={me.isHost} />
-        <Client roomCode={room.code} playerId={me.id} />
-      </main>
-    </div>
+    <RoomScreen wide={WIDE_SHELL_GAMES.includes(gameId)}>
+      <GameRoomHeader gameId={gameId} roomCode={room.code} isHost={me.isHost} />
+      <Client roomCode={room.code} playerId={me.id} />
+    </RoomScreen>
   );
 }

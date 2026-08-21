@@ -3,9 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
+import { RoomBody, RoomBottomBar, RoomContent, RoomSplit } from "@/components/room-shell";
+import {
+  PhaseHeader,
+  RoomError,
+  RoomLoading,
+  StandingRow,
+  WaitingNote,
+} from "@/components/room-game-ui";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
-import { COLUMN_LABELS } from "./types";
+import { COLUMN_LABELS, FINAL_BASE_POINTS, FINAL_COLUMN_BONUS } from "./types";
 import type { AsocijacijeIntent, AsocijacijeView } from "./types";
 
 const GAME_ID = "asocijacije";
@@ -47,6 +55,9 @@ export function AsocijacijeClient({
   const [isSending, setIsSending] = useState(false);
   // Which guess target just failed, for a quick shake/flash: "col-0".."col-3" | "final"
   const [wrongTarget, setWrongTarget] = useState<string | null>(null);
+  // UI only: which unsolved column currently has its guess field open. The
+  // board is a grid now, so column guesses live behind their solution cell.
+  const [openColumn, setOpenColumn] = useState<number | null>(null);
 
   const loadState = useCallback(async () => {
     const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/state`, {
@@ -159,257 +170,290 @@ export function AsocijacijeClient({
 
   if (!snapshot || !view) {
     return (
-      <div className="plaza-panel rounded-xl p-5">
-        <div className="plaza-skeleton h-5 w-32 rounded" />
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <div key={index} className="plaza-skeleton h-20 rounded-lg" />
-          ))}
-        </div>
-      </div>
+      <RoomBody>
+        <RoomLoading rows={4} />
+      </RoomBody>
     );
   }
 
   const solvedCount = view.columns.filter((column) => column.solution !== null).length;
+  const myScore = view.scores[playerId] ?? 0;
+  // What the final solution is still worth: the base, plus a bonus for every
+  // column nobody has cracked yet.
+  const finalPoints = FINAL_BASE_POINTS + FINAL_COLUMN_BONUS * (4 - solvedCount);
+  const boardLocked = isSending || view.phase === "finished";
 
-  return (
-    <div className="grid gap-4">
-      <div className="plaza-panel rounded-xl">
-        <div className="plaza-divider border-b p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="plaza-label">{t("asocijacije.board", view.round)}</p>
-              <h2 className="truncate text-lg font-semibold">
-                {view.phase === "setup"
-                  ? t("asocijacije.phase.setup")
-                  : view.phase === "finished"
-                    ? t("asocijacije.phase.finished")
-                    : t("asocijacije.phase.playing")}
-              </h2>
-            </div>
-            {view.phase !== "setup" && (
-              <span className="plaza-chip rounded-full px-3 py-1.5 text-xs font-semibold">
-                {t("asocijacije.solvedCount", solvedCount)}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {error && <div className="plaza-error border-b px-4 py-3 text-sm">{error}</div>}
-
-        {view.phase === "setup" ? (
-          <div className="grid gap-4 p-4">
-            <ul className="grid gap-1.5 text-sm">
-              {[
-                t("asocijacije.rule1"),
-                t("asocijacije.rule2"),
-                t("asocijacije.rule3"),
-              ].map((rule) => (
-                <li key={rule} className="plaza-muted flex gap-2">
-                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[var(--plaza-accent)]" />
+  // ------------------------------------------------------------------ setup
+  if (view.phase === "setup") {
+    return (
+      <>
+        <PhaseHeader
+          eyebrow={t("asocijacije.board", view.round)}
+          title={t("asocijacije.phase.setup")}
+        />
+        <RoomBody className="p-5 sm:p-6">
+          <RoomContent className="gap-3.5">
+          {error && <RoomError message={error} />}
+          <ul className="grid gap-2.5 text-[0.84rem]">
+            {[t("asocijacije.rule1"), t("asocijacije.rule2"), t("asocijacije.rule3")].map(
+              (rule) => (
+                <li key={rule} className="plaza-muted flex gap-2.5 leading-relaxed">
+                  <span className="mt-[0.44rem] h-[5px] w-[5px] shrink-0 rounded-full bg-[var(--plaza-accent)]" />
                   <span>{rule}</span>
                 </li>
-              ))}
-            </ul>
-            {view.isHost ? (
-              <button
-                type="button"
-                disabled={isSending}
-                onClick={() => void actionIntent({ kind: "start-game" })}
-                className="plaza-button h-12 rounded-xl text-base font-semibold disabled:opacity-50"
-              >
-                {t("asocijacije.start")}
-              </button>
-            ) : (
-              <p className="plaza-muted text-sm">{t("asocijacije.waitingForHost")}</p>
+              ),
             )}
-          </div>
-        ) : (
-          <div className="grid gap-4 p-4">
-            {/* Final solution */}
-            <FinalCard
-              view={view}
-              playersById={playersById}
-              disabled={isSending || view.phase === "finished"}
-              wrong={wrongTarget === "final"}
-              onGuess={(value) => guess("final", { kind: "guess-final", guess: value })}
-              t={t}
-            />
+          </ul>
+          </RoomContent>
+        </RoomBody>
+        <RoomBottomBar>
+          {view.isHost ? (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void actionIntent({ kind: "start-game" })}
+              className="plaza-button rm-cta disabled:opacity-50"
+            >
+              {t("asocijacije.start")}
+            </button>
+          ) : (
+            <WaitingNote>{t("asocijacije.waitingForHost")}</WaitingNote>
+          )}
+        </RoomBottomBar>
+      </>
+    );
+  }
 
-            {/* Columns */}
-            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
-              {view.columns.map((column, columnIndex) => (
-                <ColumnCard
-                  key={columnIndex}
-                  label={COLUMN_LABELS[columnIndex]}
-                  column={column}
-                  playersById={playersById}
-                  disabled={isSending || view.phase === "finished"}
-                  wrong={wrongTarget === `col-${columnIndex}`}
-                  onReveal={(field) =>
-                    void actionIntent({ kind: "reveal-hint", column: columnIndex, field })
-                  }
-                  onGuess={(value) =>
-                    guess(`col-${columnIndex}`, {
-                      kind: "guess-column",
-                      column: columnIndex,
-                      guess: value,
-                    })
-                  }
-                  t={t}
-                />
-              ))}
-            </div>
+  // ------------------------------------------------------------ 12 · board
+  return (
+    <>
+      <PhaseHeader
+        eyebrow={t("asocijacije.boardEyebrow", view.round)}
+        title={
+          view.phase === "finished" ? t("asocijacije.phase.finished") : t("asocijacije.subtitle")
+        }
+        right={
+          <span className="rm-chip rm-chip--accent">{t("asocijacije.yourScore", myScore)}</span>
+        }
+      />
 
-            {/* Scoreboard */}
-            <section>
-              <h3 className="plaza-label mb-2">{t("gradovi.scoreboard")}</h3>
+      <RoomBody className="px-5 pt-3.5 sm:px-6">
+        <RoomSplit
+          aside={
+            <section className="grid gap-2.5">
+              <h3 className="rm-eyebrow">{t("gradovi.scoreboard")}</h3>
               <ol className="grid gap-2">
                 {scoreRows.map((player, index) => (
-                  <li
+                  <StandingRow
                     key={player.id}
-                    className={`plaza-rank-row flex h-11 items-center justify-between rounded-xl px-3 text-sm ${
-                      player.id === playerId ? "plaza-rank-row--me" : ""
-                    }`}
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="plaza-rank-badge">{index + 1}</span>
-                      <span className="truncate font-medium">{player.nickname}</span>
-                      {player.id === playerId && (
-                        <span className="plaza-muted-2 text-xs">{t("gradovi.you")}</span>
-                      )}
-                    </span>
-                    <span className="font-mono font-semibold tabular-nums">
-                      {view.scores[player.id] ?? 0}
-                    </span>
-                  </li>
+                    rank={index + 1}
+                    name={player.nickname}
+                    isMe={player.id === playerId}
+                    youLabel={t("gradovi.you")}
+                    score={view.scores[player.id] ?? 0}
+                  />
                 ))}
               </ol>
             </section>
+          }
+        >
+        <div className="flex min-w-0 flex-col gap-2.5 pb-5 lg:flex-1">
+        {error && <RoomError message={error} />}
 
-            {view.phase === "playing" && view.isHost && (
+        {/* Column letters, so a coordinate like B3 reads off the board. */}
+        <div className="rm-board" aria-hidden="true">
+          {COLUMN_LABELS.map((label) => (
+            <span key={label} className="rm-board-head">
+              {label}
+            </span>
+          ))}
+        </div>
+
+        {/* 4 × 4 fields, row-major: row r is field r of every column. Hidden
+            cells only ever carry their coordinate — the hint stays server-side
+            until someone spends an open on it. */}
+        <div className="rm-board rm-board--fields">
+          {[0, 1, 2, 3].map((field) =>
+            view.columns.map((column, columnIndex) => {
+              const hint = column.hints[field];
+              const revealed = hint !== null;
+              const label = `${COLUMN_LABELS[columnIndex]}${field + 1}`;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  disabled={boardLocked || revealed || column.solution !== null}
+                  onClick={() =>
+                    void actionIntent({ kind: "reveal-hint", column: columnIndex, field })
+                  }
+                  aria-label={revealed ? `${label}: ${hint}` : label}
+                  className={`rm-board-cell ${revealed ? "" : "rm-board-cell--hidden"}`}
+                >
+                  {revealed ? hint : label}
+                </button>
+              );
+            }),
+          )}
+        </div>
+
+        {/* One solution cell per column: the answer once solved, otherwise a
+            "?" that opens the guess field for that column. */}
+        <div className="rm-board">
+          {view.columns.map((column, columnIndex) => {
+            const solved = column.solution !== null;
+            const solver = column.solvedBy ? playersById.get(column.solvedBy) : null;
+            return (
+              <button
+                key={columnIndex}
+                type="button"
+                disabled={boardLocked || solved}
+                aria-expanded={!solved ? openColumn === columnIndex : undefined}
+                onClick={() =>
+                  setOpenColumn((current) => (current === columnIndex ? null : columnIndex))
+                }
+                title={solved && solver ? t("asocijacije.solvedBy", solver.nickname) : undefined}
+                className={`rm-board-solution ${solved ? "rm-board-solution--solved" : ""} ${
+                  wrongTarget === `col-${columnIndex}` ? "plaza-shake" : ""
+                }`}
+              >
+                {solved ? column.solution : "?"}
+              </button>
+            );
+          })}
+        </div>
+
+        {openColumn !== null && view.columns[openColumn]?.solution === null && (
+          <ColumnGuess
+            label={COLUMN_LABELS[openColumn]}
+            disabled={boardLocked}
+            onGuess={(value) =>
+              guess(`col-${openColumn}`, {
+                kind: "guess-column",
+                column: openColumn,
+                guess: value,
+              })
+            }
+            onSolved={() => setOpenColumn(null)}
+            t={t}
+          />
+        )}
+
+        <FinalCard
+          view={view}
+          playersById={playersById}
+          points={finalPoints}
+          disabled={boardLocked}
+          wrong={wrongTarget === "final"}
+          onGuess={(value) => guess("final", { kind: "guess-final", guess: value })}
+          t={t}
+        />
+
+        </div>
+        </RoomSplit>
+      </RoomBody>
+
+      <RoomBottomBar
+        note={
+          view.phase === "playing"
+            ? `${t("asocijacije.solvedCount", solvedCount)} · ${t("asocijacije.hostRevealNote")}`
+            : !view.isHost
+              ? t("gradovi.hostCloseNote")
+              : undefined
+        }
+      >
+        {view.phase === "finished" ? (
+          view.isHost ? (
+            <>
               <button
                 type="button"
                 disabled={isSending}
-                onClick={() => void actionIntent({ kind: "reveal-all" })}
-                className="plaza-ghost-button h-10 rounded-lg text-sm font-medium disabled:opacity-50"
+                onClick={() => void actionIntent({ kind: "play-again" })}
+                className="plaza-button rm-cta disabled:opacity-50"
               >
-                {t("asocijacije.revealAll")}
+                {t("asocijacije.nextBoard")}
               </button>
-            )}
-
-            {view.phase === "finished" && (
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  disabled={!view.isHost || isSending}
-                  onClick={() => void actionIntent({ kind: "play-again" })}
-                  className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
-                >
-                  {view.isHost ? t("asocijacije.nextBoard") : t("gradovi.waitingForHost")}
-                </button>
-                <button
-                  type="button"
-                  disabled={!view.isHost || isSending}
-                  onClick={() => void finishSession()}
-                  className="plaza-button-secondary h-12 rounded-xl text-sm font-medium disabled:opacity-50"
-                >
-                  {view.isHost ? t("gradovi.backToLaunchpad") : t("gradovi.waitingForHost")}
-                </button>
-              </div>
-            )}
-          </div>
+              <button
+                type="button"
+                disabled={isSending}
+                onClick={() => void finishSession()}
+                className="plaza-ghost-button mx-auto rounded-lg px-3 py-1.5 text-[0.78rem] font-medium disabled:opacity-50"
+              >
+                {t("gradovi.backToLaunchpad")}
+              </button>
+            </>
+          ) : (
+            <WaitingNote>{t("gradovi.waitingForHost")}</WaitingNote>
+          )
+        ) : (
+          view.isHost && (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void actionIntent({ kind: "reveal-all" })}
+              className="plaza-button-secondary h-12 rounded-[0.875rem] text-[0.84rem] font-semibold disabled:opacity-50"
+            >
+              {t("asocijacije.revealAll")}
+            </button>
+          )
         )}
-      </div>
-    </div>
+      </RoomBottomBar>
+    </>
   );
 }
 
-function ColumnCard({
+// The guess field for one unsolved column, opened from its solution cell.
+function ColumnGuess({
   label,
-  column,
-  playersById,
   disabled,
-  wrong,
-  onReveal,
   onGuess,
+  onSolved,
   t,
 }: {
   label: string;
-  column: AsocijacijeView["columns"][number];
-  playersById: Map<string, PlayerSummary>;
   disabled: boolean;
-  wrong: boolean;
-  onReveal: (field: number) => void;
   onGuess: (value: string) => Promise<boolean>;
+  onSolved: () => void;
   t: (key: string, ...args: Array<string | number>) => string;
 }) {
   const [value, setValue] = useState("");
-  const solved = column.solution !== null;
-  const solver = column.solvedBy ? playersById.get(column.solvedBy) : null;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!value.trim()) return;
     const ok = await onGuess(value);
-    if (ok) setValue("");
+    if (ok) {
+      setValue("");
+      onSolved();
+    }
   }
 
   return (
-    <section
-      className={`plaza-asoc-column rounded-xl ${solved ? "plaza-asoc-column--solved" : ""} ${wrong ? "plaza-shake" : ""}`}
-      aria-label={t("asocijacije.columnAria", label)}
-    >
-      <div className="grid gap-1.5 p-2.5">
-        {column.hints.map((hint, fieldIndex) => {
-          const revealed = hint !== null;
-          return (
-            <button
-              key={fieldIndex}
-              type="button"
-              disabled={disabled || revealed || solved}
-              onClick={() => onReveal(fieldIndex)}
-              className={`plaza-asoc-cell h-11 rounded-lg px-2 text-sm font-medium ${
-                revealed ? "plaza-asoc-cell--revealed" : ""
-              }`}
-            >
-              {revealed ? hint : `${label}${fieldIndex + 1}`}
-            </button>
-          );
-        })}
-        {solved ? (
-          <div className="plaza-asoc-solution rounded-lg px-2 py-2 text-center">
-            <p className="text-sm font-bold uppercase tracking-wide">{column.solution}</p>
-            {solver && <p className="plaza-muted mt-0.5 text-xs">{solver.nickname}</p>}
-          </div>
-        ) : (
-          <form onSubmit={(event) => void submit(event)} className="flex gap-1.5">
-            <input
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              disabled={disabled}
-              maxLength={40}
-              placeholder={label}
-              aria-label={t("asocijacije.guessColumnAria", label)}
-              className="plaza-input h-10 w-full min-w-0 rounded-lg px-2.5 text-sm"
-            />
-            <button
-              type="submit"
-              disabled={disabled || !value.trim()}
-              className="plaza-button h-10 shrink-0 rounded-lg px-3 text-xs font-semibold disabled:opacity-40"
-            >
-              {t("asocijacije.guess")}
-            </button>
-          </form>
-        )}
-      </div>
-    </section>
+    <form onSubmit={(event) => void submit(event)} className="flex gap-2">
+      <input
+        autoFocus
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        disabled={disabled}
+        maxLength={40}
+        placeholder={t("asocijacije.guessColumnAria", label)}
+        aria-label={t("asocijacije.guessColumnAria", label)}
+        className="plaza-input h-[2.875rem] min-w-0 flex-1 rounded-xl px-3.5 text-[0.875rem]"
+      />
+      <button
+        type="submit"
+        disabled={disabled || !value.trim()}
+        className="plaza-button h-[2.875rem] w-[4.875rem] shrink-0 rounded-xl text-[0.84rem] font-extrabold disabled:opacity-40"
+      >
+        {t("asocijacije.guess")}
+      </button>
+    </form>
   );
 }
 
 function FinalCard({
   view,
   playersById,
+  points,
   disabled,
   wrong,
   onGuess,
@@ -417,6 +461,7 @@ function FinalCard({
 }: {
   view: AsocijacijeView;
   playersById: Map<string, PlayerSummary>;
+  points: number;
   disabled: boolean;
   wrong: boolean;
   onGuess: (value: string) => Promise<boolean>;
@@ -435,25 +480,25 @@ function FinalCard({
 
   return (
     <section
-      className={`plaza-asoc-final rounded-xl p-4 text-center ${wrong ? "plaza-shake" : ""} ${
-        solved ? "plaza-asoc-final--won" : ""
-      }`}
+      className={`rm-final-card ${wrong ? "plaza-shake" : ""}`}
       aria-label={t("asocijacije.finalAria")}
     >
-      <p className="plaza-label">{t("asocijacije.finalSolution")}</p>
+      <span className="rm-final-card__label">
+        {solved ? t("asocijacije.finalSolution") : t("asocijacije.finalWithPoints", points)}
+      </span>
       {solved ? (
         <>
-          <p className="mt-1.5 text-2xl font-bold uppercase tracking-wide">
+          <p className="rm-display text-[1.375rem] font-extrabold uppercase">
             {view.finalSolution}
           </p>
-          {solver ? (
-            <p className="plaza-muted mt-1 text-sm">{t("asocijacije.solvedBy", solver.nickname)}</p>
-          ) : (
-            <p className="plaza-muted mt-1 text-sm">{t("asocijacije.revealedByHost")}</p>
-          )}
+          <p className="plaza-muted text-[0.78rem]">
+            {solver
+              ? t("asocijacije.solvedBy", solver.nickname)
+              : t("asocijacije.revealedByHost")}
+          </p>
         </>
       ) : (
-        <form onSubmit={(event) => void submit(event)} className="mx-auto mt-2 flex max-w-sm gap-2">
+        <form onSubmit={(event) => void submit(event)} className="flex gap-2">
           <input
             value={value}
             onChange={(event) => setValue(event.target.value)}
@@ -461,12 +506,12 @@ function FinalCard({
             maxLength={40}
             placeholder={t("asocijacije.finalPlaceholder")}
             aria-label={t("asocijacije.finalAria")}
-            className="plaza-input h-11 w-full min-w-0 rounded-lg px-3 text-sm"
+            className="plaza-input h-[2.875rem] min-w-0 flex-1 rounded-xl px-3.5 text-[0.875rem]"
           />
           <button
             type="submit"
             disabled={disabled || !value.trim()}
-            className="plaza-button h-11 shrink-0 rounded-lg px-4 text-sm font-semibold disabled:opacity-40"
+            className="plaza-button h-[2.875rem] w-[4.875rem] shrink-0 rounded-xl text-[0.84rem] font-extrabold disabled:opacity-40"
           >
             {t("asocijacije.guess")}
           </button>

@@ -2,9 +2,18 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
+import { RoomBody, RoomBottomBar, RoomContent } from "@/components/room-shell";
+import {
+  PhaseHeader,
+  RoomError,
+  RoomLoading,
+  StandingRow,
+  WaitingNote,
+} from "@/components/room-game-ui";
+import { CheckIcon, EnterIcon, NoteIcon, ReplayIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
 import {
@@ -16,6 +25,7 @@ import {
   MIN_GUESS_DURATION_SECONDS,
   MIN_SONG_ROUNDS,
   SONG_SOURCE_PRESETS,
+  FIRST_MATCH_BONUS,
   clipLengthMultiplier,
 } from "./types";
 import type { AnswerMode, GuessTheSongIntent, GuessTheSongView } from "./types";
@@ -45,33 +55,37 @@ type SongSnapshot = {
   updatedAt: string;
 };
 
-// Deterministic pseudo-random bar settings so SSR and client agree; the
-// staggered durations keep the wave from ever looping in sync.
-const EQ_BARS = Array.from({ length: 16 }, (_, index) => ({
-  dur: 620 + ((index * 97) % 460),
-  delay: (index * 53) % 380,
-  min: 0.14 + ((index * 31) % 22) / 100,
-  max: 0.55 + ((index * 47) % 45) / 100,
-}));
+// Twelve fixed bars showing how much of the clip has played. Heights are
+// hard-coded so server and client agree and the shape never jumps.
+const WAVE_BARS = [14, 26, 38, 22, 34, 18, 30, 12, 24, 16, 32, 20];
 
-function Equalizer({ active }: { active: boolean }) {
+function ClipWave({ progress }: { progress: number }) {
+  // `progress` is 0..1 through the clip; the bar at the cursor is highlighted.
+  const cursor = Math.min(WAVE_BARS.length - 1, Math.floor(progress * WAVE_BARS.length));
   return (
-    <div className="plaza-eq mt-3" data-active={active} aria-hidden="true">
-      {EQ_BARS.map((bar, index) => (
+    <div className="rm-wave" aria-hidden="true">
+      {WAVE_BARS.map((height, index) => (
         <span
           key={index}
-          style={
-            {
-              "--eq-dur": `${bar.dur}ms`,
-              "--eq-delay": `${bar.delay}ms`,
-              "--eq-min": bar.min,
-              "--eq-max": bar.max,
-            } as CSSProperties
+          style={{ height: `${height}px` }}
+          data-state={
+            progress <= 0
+              ? "idle"
+              : index < cursor
+                ? "played"
+                : index === cursor
+                  ? "cursor"
+                  : "idle"
           }
         />
       ))}
     </div>
   );
+}
+
+function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
 async function readError(response: Response): Promise<string> {
@@ -395,14 +409,9 @@ export function GuessTheSongClient({
 
   if (!snapshot || !view) {
     return (
-      <div className="plaza-panel rounded-xl p-5">
-        <div className="plaza-skeleton h-5 w-32 rounded" />
-        <div className="mt-4 grid gap-2">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="plaza-skeleton h-12 rounded-lg" />
-          ))}
-        </div>
-      </div>
+      <RoomBody>
+        <RoomLoading rows={4} />
+      </RoomBody>
     );
   }
 
@@ -416,458 +425,559 @@ export function GuessTheSongClient({
         ? view.myProgress.artistMatched
         : view.myProgress.titleMatched && view.myProgress.artistMatched;
 
+  // How far into the clip we are, mirrored from the shared playback timestamp.
+  const clipLength = view.settings.clipLengthSeconds;
+  const clipElapsed =
+    view.phase === "playing" && view.playbackStartAt !== null
+      ? Math.max(0, Math.min(clipLength, (now - view.playbackStartAt) / 1000))
+      : 0;
+  const timerUrgent = secondsLeft !== null && secondsLeft <= 5;
+
+  const scoreLine = scoreRows
+    .map(
+      (player) =>
+        `${player.id === playerId ? t("gradovi.you") : player.nickname} ${view.scores[player.id] ?? 0}`,
+    )
+    .join(" · ");
+
+  const roundProgress = (
+    <span
+      className="rm-segments"
+      role="img"
+      aria-label={t("song.roundOf", view.roundIndex + 1, view.effectiveRounds)}
+    >
+      {Array.from({ length: view.effectiveRounds }).map((_, index) => (
+        <span
+          key={index}
+          className={`rm-segment ${
+            index < view.roundIndex
+              ? "rm-segment--done"
+              : index === view.roundIndex
+                ? "rm-segment--current"
+                : ""
+          }`}
+        />
+      ))}
+    </span>
+  );
+
   const scoreboard = (
-    <section>
-      <h3 className="plaza-label mb-2">{t("gradovi.scoreboard")}</h3>
+    <section className="grid gap-2.5">
+      <h3 className="rm-eyebrow">{t("gradovi.scoreboard")}</h3>
       <ol className="grid gap-2">
         {scoreRows.map((player, index) => (
-          <li
+          <StandingRow
             key={player.id}
-            className={`plaza-rank-row flex h-11 items-center justify-between rounded-xl px-3 text-sm ${
-              player.id === playerId ? "plaza-rank-row--me" : ""
-            }`}
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="plaza-rank-badge">{index + 1}</span>
-              <span className="truncate font-medium">{player.nickname}</span>
-              {player.id === playerId && (
-                <span className="plaza-muted-2 text-xs">{t("gradovi.you")}</span>
-              )}
-              {view.matchedPlayerIds.includes(player.id) && view.phase === "playing" && (
-                <span className="plaza-status-valid rounded-full px-2 py-0.5 text-[0.65rem] font-semibold">
-                  {t("song.matched")}
-                </span>
-              )}
-            </span>
-            <span className="font-mono font-semibold tabular-nums">
-              {view.phase === "round-end" && (view.roundPoints[player.id] ?? 0) > 0 ? (
-                <span className="plaza-status-valid mr-1.5 rounded px-1.5 py-0.5 text-xs">
-                  +{view.roundPoints[player.id]}
-                </span>
-              ) : null}
-              {view.scores[player.id] ?? 0}
-            </span>
-          </li>
+            rank={index + 1}
+            name={player.nickname}
+            isMe={player.id === playerId}
+            youLabel={t("gradovi.you")}
+            note={
+              view.matchedPlayerIds.includes(player.id) && view.phase === "playing"
+                ? t("song.matched")
+                : undefined
+            }
+            score={
+              <>
+                {view.phase === "round-end" && (view.roundPoints[player.id] ?? 0) > 0 && (
+                  <span className="plaza-status-valid mr-1.5 rounded px-1.5 py-0.5 text-[0.69rem]">
+                    +{view.roundPoints[player.id]}
+                  </span>
+                )}
+                {view.scores[player.id] ?? 0}
+              </>
+            }
+          />
         ))}
       </ol>
     </section>
   );
 
-  return (
-    <div className="grid gap-4">
-      <div className="plaza-panel rounded-xl">
-        <div className="plaza-divider border-b p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="plaza-label">
-                {view.phase === "setup"
-                  ? t("song.phase.setup")
-                  : t("song.roundOf", view.roundIndex + 1, view.effectiveRounds)}
-              </p>
-              <h2 className="truncate text-lg font-semibold">
-                {view.phase === "setup" && t("song.setupTitle")}
-                {view.phase === "countdown" && t("song.countdownTitle")}
-                {view.phase === "playing" && t("song.playingTitle")}
-                {view.phase === "round-end" && t("song.roundEndTitle")}
-                {view.phase === "finished" && t("song.finishedTitle")}
-              </h2>
-            </div>
-            {view.playlistLabel && view.phase !== "setup" && (
-              <span className="plaza-chip max-w-40 truncate rounded-full px-3 py-1.5 text-xs font-semibold">
-                ♪ {view.playlistLabel}
-              </span>
-            )}
-          </div>
-        </div>
+  const audioElement = (
+    /* Mounted in every phase and never remounted: the autoplay unlock is bound
+       to this element, so it has to exist before the first tap and survive
+       every phase change. Swapping `src` keeps the unlock. */
+    <audio ref={audioRef} preload="auto" className="hidden" src={previewUrl ?? SILENT_CLIP} />
+  );
 
-        {error && <div className="plaza-error border-b px-4 py-3 text-sm">{error}</div>}
+  const unlockBanner = !audioUnlocked && view.phase !== "finished" && (
+    <button
+      type="button"
+      onClick={unlockAudio}
+      className="plaza-status-valid flex w-full items-center justify-center gap-2 rounded-[0.875rem] px-4 py-3 text-[0.84rem] font-semibold"
+    >
+      <NoteIcon size={16} /> {t("song.unlockAudio")}
+    </button>
+  );
 
-        {!audioUnlocked && view.phase !== "finished" && (
-          <button
-            type="button"
-            onClick={unlockAudio}
-            className="plaza-status-valid flex w-full items-center justify-center gap-2 border-b px-4 py-3 text-sm font-semibold"
-          >
-            ♪ {t("song.unlockAudio")}
-          </button>
-        )}
+  // ---------------------------------------------------------------- setup
+  if (view.phase === "setup") {
+    return (
+      <>
+        <PhaseHeader eyebrow={t("song.phase.setup")} title={t("song.setupTitle")} />
+        <RoomBody className="p-5 sm:p-6">
+          <RoomContent className="gap-5">
+          {error && <RoomError message={error} />}
+          {audioElement}
+          {unlockBanner}
 
-        {/* ------------------------------------------------ setup */}
-        {view.phase === "setup" && (
-          <div className="grid gap-5 p-4">
-            {view.isHost ? (
-              <>
-                <section className="grid gap-2">
-                  <h3 className="plaza-label">{t("song.source")}</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    {SONG_SOURCE_PRESETS.map((preset) => (
+          {view.isHost ? (
+            <>
+              <section className="grid gap-2.5">
+                <h3 className="rm-eyebrow">{t("song.source")}</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  {SONG_SOURCE_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      aria-pressed={selectedPreset === preset.id}
+                      disabled={isStarting}
+                      onClick={() => setSelectedPreset(preset.id)}
+                      className={`plaza-select-card h-13 rounded-[0.875rem] px-3 text-[0.84rem] font-semibold ${
+                        selectedPreset === preset.id ? "plaza-select-card--selected" : ""
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="grid gap-1.5">
+                  <span className="plaza-muted text-[0.69rem]">{t("song.customQuery")}</span>
+                  <input
+                    value={customQuery}
+                    maxLength={60}
+                    disabled={isStarting}
+                    onChange={(event) => {
+                      setCustomQuery(event.target.value);
+                      setSelectedPreset(
+                        event.target.value.trim() ? null : SONG_SOURCE_PRESETS[0].id,
+                      );
+                    }}
+                    placeholder={t("song.customQueryPlaceholder")}
+                    className="plaza-input h-12 rounded-[0.875rem] px-3.5 text-[0.875rem]"
+                  />
+                </label>
+              </section>
+
+              <section className="grid gap-3">
+                <h3 className="rm-eyebrow">{t("alias.settings")}</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <NumberControl
+                    label={t("song.rounds")}
+                    value={view.settings.totalRounds}
+                    min={MIN_SONG_ROUNDS}
+                    max={MAX_SONG_ROUNDS}
+                    step={1}
+                    disabled={isSending || isStarting}
+                    onChange={(value) =>
+                      void actionIntent({
+                        kind: "update-settings",
+                        settings: { totalRounds: value },
+                      })
+                    }
+                  />
+                  <NumberControl
+                    label={t("song.roundTime")}
+                    value={view.settings.guessDurationSeconds}
+                    unit={t("gradovi.settings.seconds")}
+                    min={MIN_GUESS_DURATION_SECONDS}
+                    max={MAX_GUESS_DURATION_SECONDS}
+                    step={GUESS_DURATION_STEP_SECONDS}
+                    disabled={isSending || isStarting}
+                    onChange={(value) =>
+                      void actionIntent({
+                        kind: "update-settings",
+                        settings: { guessDurationSeconds: value },
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="grid gap-1.5">
+                  <span className="rm-eyebrow">{t("song.clipLength")}</span>
+                  <div className="grid grid-cols-4 gap-2" role="group" aria-label={t("song.clipLength")}>
+                    {CLIP_LENGTH_OPTIONS.map((option) => {
+                      const multiplier = clipLengthMultiplier(option);
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          aria-pressed={view.settings.clipLengthSeconds === option}
+                          disabled={isSending || isStarting}
+                          onClick={() =>
+                            void actionIntent({
+                              kind: "update-settings",
+                              settings: { clipLengthSeconds: option },
+                            })
+                          }
+                          className={`plaza-select-card grid h-12 place-items-center rounded-[0.875rem] text-[0.69rem] font-semibold disabled:opacity-40 ${
+                            view.settings.clipLengthSeconds === option
+                              ? "plaza-select-card--selected"
+                              : ""
+                          }`}
+                        >
+                          <span>{option}s</span>
+                          {multiplier > 1 && (
+                            <span className="plaza-muted text-[0.6rem] leading-none">
+                              ×{multiplier}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="plaza-muted-2 text-[0.69rem] leading-relaxed">
+                    {t("song.clipLengthHint")}
+                  </p>
+                </div>
+
+                <div className="grid gap-1.5">
+                  <span className="rm-eyebrow">{t("song.answerMode")}</span>
+                  <div
+                    className="grid grid-cols-3 gap-2"
+                    role="group"
+                    aria-label={t("song.answerMode")}
+                  >
+                    {(["both", "title", "artist"] as AnswerMode[]).map((mode) => (
                       <button
-                        key={preset.id}
+                        key={mode}
                         type="button"
-                        aria-pressed={selectedPreset === preset.id}
-                        disabled={isStarting}
-                        onClick={() => setSelectedPreset(preset.id)}
-                        className={`plaza-select-card h-12 rounded-xl px-3 text-sm font-semibold ${
-                          selectedPreset === preset.id ? "plaza-select-card--selected" : ""
+                        aria-pressed={view.settings.answerMode === mode}
+                        disabled={isSending || isStarting}
+                        onClick={() =>
+                          void actionIntent({
+                            kind: "update-settings",
+                            settings: { answerMode: mode },
+                          })
+                        }
+                        className={`plaza-select-card h-12 rounded-[0.875rem] text-[0.69rem] font-semibold ${
+                          view.settings.answerMode === mode ? "plaza-select-card--selected" : ""
                         }`}
                       >
-                        {preset.label}
+                        {t(`song.mode.${mode}`)}
                       </button>
                     ))}
                   </div>
-                  <label className="mt-1 grid gap-1.5">
-                    <span className="plaza-muted text-xs">{t("song.customQuery")}</span>
-                    <input
-                      value={customQuery}
-                      maxLength={60}
-                      disabled={isStarting}
-                      onChange={(event) => {
-                        setCustomQuery(event.target.value);
-                        setSelectedPreset(event.target.value.trim() ? null : SONG_SOURCE_PRESETS[0].id);
-                      }}
-                      placeholder={t("song.customQueryPlaceholder")}
-                      className="plaza-input h-11 rounded-xl px-3 text-sm"
-                    />
-                  </label>
-                </section>
+                </div>
+              </section>
+            </>
+          ) : (
+            <>
+              <p className="plaza-muted text-[0.84rem]">{t("song.waitingForSetup")}</p>
+              {scoreboard}
+            </>
+          )}
+          </RoomContent>
+        </RoomBody>
 
-                <section className="grid gap-3">
-                  <h3 className="plaza-label">{t("alias.settings")}</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <NumberControl
-                      label={t("song.rounds")}
-                      value={view.settings.totalRounds}
-                      min={MIN_SONG_ROUNDS}
-                      max={MAX_SONG_ROUNDS}
-                      step={1}
-                      disabled={isSending || isStarting}
-                      onChange={(value) =>
-                        void actionIntent({ kind: "update-settings", settings: { totalRounds: value } })
-                      }
-                    />
-                    <NumberControl
-                      label={t("song.roundTime")}
-                      value={view.settings.guessDurationSeconds}
-                      unit={t("gradovi.settings.seconds")}
-                      min={MIN_GUESS_DURATION_SECONDS}
-                      max={MAX_GUESS_DURATION_SECONDS}
-                      step={GUESS_DURATION_STEP_SECONDS}
-                      disabled={isSending || isStarting}
-                      onChange={(value) =>
-                        void actionIntent({
-                          kind: "update-settings",
-                          settings: { guessDurationSeconds: value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <span className="plaza-label">{t("song.clipLength")}</span>
-                    <div
-                      className="grid grid-cols-4 gap-2"
-                      role="group"
-                      aria-label={t("song.clipLength")}
-                    >
-                      {CLIP_LENGTH_OPTIONS.map((option) => {
-                        const multiplier = clipLengthMultiplier(option);
-                        return (
-                          <button
-                            key={option}
-                            type="button"
-                            aria-pressed={view.settings.clipLengthSeconds === option}
-                            disabled={isSending || isStarting}
-                            onClick={() =>
-                              void actionIntent({
-                                kind: "update-settings",
-                                settings: { clipLengthSeconds: option },
-                              })
-                            }
-                            className={`plaza-select-card grid h-11 place-items-center rounded-xl text-xs font-semibold disabled:opacity-40 ${
-                              view.settings.clipLengthSeconds === option
-                                ? "plaza-select-card--selected"
-                                : ""
-                            }`}
-                          >
-                            <span>{option}s</span>
-                            {multiplier > 1 && (
-                              <span className="plaza-muted text-[10px] leading-none">
-                                ×{multiplier}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="plaza-muted text-xs">{t("song.clipLengthHint")}</p>
-                  </div>
-                  <div className="grid gap-1.5">
-                    <span className="plaza-label">{t("song.answerMode")}</span>
-                    <div className="grid grid-cols-3 gap-2" role="group" aria-label={t("song.answerMode")}>
-                      {(["both", "title", "artist"] as AnswerMode[]).map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          aria-pressed={view.settings.answerMode === mode}
-                          disabled={isSending || isStarting}
-                          onClick={() =>
-                            void actionIntent({ kind: "update-settings", settings: { answerMode: mode } })
-                          }
-                          className={`plaza-select-card h-11 rounded-xl text-xs font-semibold ${
-                            view.settings.answerMode === mode ? "plaza-select-card--selected" : ""
-                          }`}
-                        >
-                          {t(`song.mode.${mode}`)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </section>
+        <RoomBottomBar note={view.isHost ? t("song.previewNote") : undefined}>
+          {view.isHost ? (
+            <button
+              type="button"
+              disabled={isStarting || (!selectedPreset && !customQuery.trim())}
+              onClick={() => void startGame()}
+              className="plaza-button rm-cta disabled:opacity-50"
+            >
+              {isStarting ? t("song.loadingTracks") : t("song.start")}
+            </button>
+          ) : (
+            <WaitingNote>{t("song.waitingForSetup")}</WaitingNote>
+          )}
+        </RoomBottomBar>
+      </>
+    );
+  }
 
-                <button
-                  type="button"
-                  disabled={isStarting || (!selectedPreset && !customQuery.trim())}
-                  onClick={() => void startGame()}
-                  className="plaza-button h-12 rounded-xl text-base font-semibold disabled:opacity-50"
-                >
-                  {isStarting ? t("song.loadingTracks") : t("song.start")}
-                </button>
-                <p className="plaza-muted text-center text-xs">{t("song.previewNote")}</p>
-              </>
-            ) : (
-              <div className="grid gap-4">
-                <p className="plaza-muted text-sm">{t("song.waitingForSetup")}</p>
-                {scoreboard}
-              </div>
-            )}
+  // ------------------------------------------------------------- countdown
+  if (view.phase === "countdown") {
+    return (
+      <>
+        <PhaseHeader
+          eyebrow={`${t("song.roundOf", view.roundIndex + 1, view.effectiveRounds)}${
+            view.playlistLabel ? ` · ${view.playlistLabel}` : ""
+          }`}
+          title={t("song.countdownTitle")}
+        />
+        <RoomBody center className="p-5 text-center sm:p-6">
+          <RoomContent className="items-center gap-6">
+          {audioElement}
+          {unlockBanner}
+          <p className="plaza-muted text-[0.84rem]">{t("song.getReady")}</p>
+          <p
+            key={countdownSecondsLeft ?? COUNTDOWN_SECONDS}
+            className="plaza-count-pulse rm-numeric text-6xl font-extrabold"
+            role="timer"
+            aria-live="polite"
+          >
+            {countdownSecondsLeft ?? COUNTDOWN_SECONDS}
+          </p>
+          {!audioUnlocked && (
+            <p className="plaza-muted-2 text-[0.72rem]">{t("song.unlockAudioHint")}</p>
+          )}
+          </RoomContent>
+        </RoomBody>
+        <RoomBottomBar>{roundProgress}</RoomBottomBar>
+      </>
+    );
+  }
+
+  // -------------------------------------------------------------- finished
+  if (view.phase === "finished") {
+    return (
+      <>
+        <PhaseHeader
+          eyebrow={t("song.roundOf", view.roundIndex + 1, view.effectiveRounds)}
+          title={t("song.finishedTitle")}
+        />
+        <RoomBody className="p-5 sm:p-6">
+          <RoomContent className="gap-3.5">
+          {error && <RoomError message={error} />}
+          {audioElement}
+          <div className="plaza-winner-card rounded-3xl px-5 py-8 text-center">
+            <p className="rm-eyebrow">{t("alias.winner")}</p>
+            <p className="rm-display mt-2 text-[1.75rem] font-extrabold">
+              {scoreRows[0]?.nickname ?? "—"}
+            </p>
+            <p className="plaza-muted mt-1 text-[0.84rem]">
+              {t("song.finalScore", view.scores[scoreRows[0]?.id ?? ""] ?? 0)}
+            </p>
           </div>
-        )}
+          {scoreboard}
+          </RoomContent>
+        </RoomBody>
+        <RoomBottomBar note={!view.isHost ? t("gradovi.hostCloseNote") : undefined}>
+          {view.isHost ? (
+            <>
+              <button
+                type="button"
+                disabled={isSending}
+                onClick={() => void actionIntent({ kind: "play-again" })}
+                className="plaza-button rm-cta disabled:opacity-50"
+              >
+                {t("alias.playAgain")}
+              </button>
+              <button
+                type="button"
+                disabled={isSending}
+                onClick={() => void finishSession()}
+                className="plaza-ghost-button mx-auto rounded-lg px-3 py-1.5 text-[0.78rem] font-medium disabled:opacity-50"
+              >
+                {t("gradovi.backToLaunchpad")}
+              </button>
+            </>
+          ) : (
+            <WaitingNote>{t("gradovi.waitingForHost")}</WaitingNote>
+          )}
+        </RoomBottomBar>
+      </>
+    );
+  }
 
-        {/* Mounted in every phase and never remounted: the autoplay unlock is
-            bound to this element, so it has to exist before the first tap and
-            survive every phase change. Swapping `src` keeps the unlock. */}
-        <audio ref={audioRef} preload="auto" className="hidden" src={previewUrl ?? SILENT_CLIP} />
-
-        {/* ------------------------------------------------ countdown */}
-        {view.phase === "countdown" && (
-          <div className="grid gap-6 p-4 py-10 text-center">
-            <p className="plaza-muted text-sm">{t("song.getReady")}</p>
-            <p
-              key={countdownSecondsLeft ?? COUNTDOWN_SECONDS}
-              className="plaza-count-pulse font-mono text-6xl font-bold tabular-nums"
+  // ------------------------------------------ 13 · playing and round-end
+  return (
+    <>
+      <PhaseHeader
+        eyebrow={`${t("song.roundOf", view.roundIndex + 1, view.effectiveRounds)}${
+          view.playlistLabel ? ` · ${view.playlistLabel}` : ""
+        }`}
+        title={t(`song.modeHint.${view.settings.answerMode}`)}
+        right={
+          view.phase === "playing" && secondsLeft !== null ? (
+            <span
+              className={`rm-timer ${timerUrgent ? "rm-timer--danger" : "rm-timer--accent"}`}
               role="timer"
               aria-live="polite"
             >
-              {countdownSecondsLeft ?? COUNTDOWN_SECONDS}
-            </p>
-            {!audioUnlocked && (
-              <p className="plaza-muted text-xs">{t("song.unlockAudioHint")}</p>
+              {formatClock(secondsLeft)}
+            </span>
+          ) : undefined
+        }
+      />
+
+      <RoomBody center className="p-5 sm:p-6">
+        <RoomContent className="gap-4">
+        {error && <RoomError message={error} />}
+        {audioElement}
+        {unlockBanner}
+
+        <div className="plaza-panel grid justify-items-center gap-4 rounded-3xl px-5 py-[1.625rem]">
+          {/* Artwork is part of the answer, so it only arrives at reveal. */}
+          <div className="rm-artwork">
+            {view.reveal?.artworkUrl ? (
+              <img src={view.reveal.artworkUrl} alt="" width={180} height={180} />
+            ) : (
+              <NoteIcon size={44} />
             )}
           </div>
-        )}
 
-        {/* ------------------------------------------------ playing / round-end */}
-        {(view.phase === "playing" || view.phase === "round-end") && (
-          <div className="grid gap-4 p-4">
-            <div className="plaza-music-card rounded-2xl p-4">
-              <div className="flex items-center gap-4">
-                {view.reveal?.artworkUrl ? (
-                  <img
-                    src={view.reveal.artworkUrl}
-                    alt=""
-                    width={72}
-                    height={72}
-                    className="h-18 w-18 shrink-0 rounded-xl"
-                  />
-                ) : (
-                  <div className="plaza-music-disc shrink-0" aria-hidden="true" data-spinning={view.phase === "playing"}>
-                    <span>♪</span>
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  {view.phase === "round-end" && view.reveal ? (
-                    <>
-                      <p className="truncate text-lg font-bold">{view.reveal.title}</p>
-                      <p className="plaza-muted truncate text-sm">{view.reveal.artist}</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-lg font-bold">{t("song.mysteryTrack")}</p>
-                      <p className="plaza-muted text-sm">{t(`song.modeHint.${view.settings.answerMode}`)}</p>
-                    </>
-                  )}
-                </div>
-                {view.phase === "playing" && secondsLeft !== null && (
-                  <span
-                    className={`shrink-0 font-mono text-2xl font-bold tabular-nums ${
-                      secondsLeft <= 10 ? "text-[var(--plaza-danger)]" : ""
-                    }`}
-                    role="timer"
-                    aria-live="polite"
-                  >
-                    {secondsLeft}
-                  </span>
-                )}
+          {view.phase === "round-end" && view.reveal ? (
+            <div className="grid justify-items-center gap-1 text-center">
+              <p className="rm-display text-[1.375rem] font-extrabold">{view.reveal.title}</p>
+              <p className="plaza-muted text-[0.875rem]">{view.reveal.artist}</p>
+            </div>
+          ) : (
+            <div className="grid w-full gap-2">
+              <ClipWave progress={clipLength > 0 ? clipElapsed / clipLength : 0} />
+              <div className="rm-numeric plaza-muted-2 flex justify-between text-[0.69rem]">
+                <span>{formatClock(clipElapsed)}</span>
+                <span>{t("song.clipLabel", clipLength)}</span>
               </div>
-              <Equalizer active={view.phase === "playing"} />
-              {view.phase === "playing" && (
-                <div className="mt-4 grid gap-3">
-                  <button
-                    type="button"
-                    onClick={replayClip}
-                    className="plaza-button h-11 w-full rounded-xl text-sm font-semibold"
-                  >
-                    {audioUnlocked
-                      ? `↻ ${t("song.replay")} (${clipLengthSeconds}s)`
-                      : `▶ ${t("song.tapToPlay")}`}
-                  </button>
-                  <label className="flex items-center gap-3">
-                    <span className="plaza-muted text-xs">{t("song.volume")}</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={volume}
-                      aria-label={t("song.volume")}
-                      onChange={(event) => setVolume(Number(event.target.value))}
-                      className="plaza-range h-6 flex-1"
-                    />
-                    <span className="plaza-muted w-9 text-right font-mono text-xs tabular-nums">
-                      {Math.round(volume * 100)}%
-                    </span>
-                  </label>
-                </div>
+            </div>
+          )}
+
+          {view.phase === "playing" && (
+            <div className="grid w-full gap-2.5">
+              <button
+                type="button"
+                onClick={replayClip}
+                className="plaza-button-secondary flex h-10 items-center justify-center gap-2 rounded-xl text-[0.78rem] font-semibold"
+              >
+                <ReplayIcon />
+                {audioUnlocked ? `${t("song.replay")} (${clipLength}s)` : t("song.tapToPlay")}
+              </button>
+              <label className="flex items-center gap-2.5">
+                <span className="plaza-muted-2 text-[0.69rem]">{t("song.volume")}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={volume}
+                  aria-label={t("song.volume")}
+                  onChange={(event) => setVolume(Number(event.target.value))}
+                  className="plaza-range h-6 flex-1"
+                />
+                <span className="rm-numeric plaza-muted-2 w-9 text-right text-[0.69rem]">
+                  {Math.round(volume * 100)}%
+                </span>
+              </label>
+            </div>
+          )}
+        </div>
+
+        {view.phase === "playing" && (
+          <div className="grid gap-2.5">
+            {modeDone ? (
+              <p className="plaza-status-valid rounded-2xl px-4 py-3.5 text-center text-[0.84rem] font-semibold">
+                {t("song.youGotIt")}
+              </p>
+            ) : (
+              <form onSubmit={(event) => void submitGuess(event)} className="flex gap-2">
+                <input
+                  value={guessValue}
+                  onChange={(event) => setGuessValue(event.target.value)}
+                  maxLength={80}
+                  disabled={isSending}
+                  placeholder={t(`song.guessPlaceholder.${view.settings.answerMode}`)}
+                  aria-label={t("song.guessAria")}
+                  className={`plaza-input h-[3.375rem] min-w-0 flex-1 rounded-2xl px-4 text-[0.94rem] ${
+                    guessFlash === "miss" ? "plaza-shake" : ""
+                  }`}
+                />
+                <button
+                  type="submit"
+                  disabled={isSending || !guessValue.trim()}
+                  aria-label={t("song.guess")}
+                  className="plaza-button grid h-[3.375rem] w-16 shrink-0 place-items-center rounded-2xl disabled:opacity-40"
+                >
+                  <EnterIcon size={20} />
+                </button>
+              </form>
+            )}
+
+            {/* One chip per part of the answer this mode asks for. */}
+            <div className="flex gap-2">
+              {view.settings.answerMode !== "artist" && (
+                <MatchChip
+                  matched={view.myProgress.titleMatched}
+                  label={
+                    view.myProgress.titleMatched
+                      ? t("song.titleMatched")
+                      : t("song.titlePending")
+                  }
+                />
+              )}
+              {view.settings.answerMode !== "title" && (
+                <MatchChip
+                  matched={view.myProgress.artistMatched}
+                  label={
+                    view.myProgress.artistMatched
+                      ? t("song.artistMatched")
+                      : t("song.artistPending")
+                  }
+                />
               )}
             </div>
 
-            {view.phase === "playing" && (
-              <>
-                {modeDone ? (
-                  <div className="plaza-status-valid rounded-xl px-4 py-3 text-center text-sm font-semibold">
-                    {t("song.youGotIt")}
-                  </div>
-                ) : (
-                  <form onSubmit={(event) => void submitGuess(event)} className="grid gap-2">
-                    <div className="flex gap-2">
-                      <input
-                        value={guessValue}
-                        onChange={(event) => setGuessValue(event.target.value)}
-                        maxLength={80}
-                        disabled={isSending}
-                        placeholder={t(`song.guessPlaceholder.${view.settings.answerMode}`)}
-                        aria-label={t("song.guessAria")}
-                        className={`plaza-input h-12 w-full min-w-0 rounded-xl px-3 text-base ${
-                          guessFlash === "miss" ? "plaza-shake" : ""
-                        }`}
-                      />
-                      <button
-                        type="submit"
-                        disabled={isSending || !guessValue.trim()}
-                        className="plaza-button h-12 shrink-0 rounded-xl px-4 text-sm font-semibold disabled:opacity-40"
-                      >
-                        {t("song.guess")}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs" aria-live="polite">
-                      {guessFlash === "miss" && (
-                        <span className="text-[var(--plaza-danger)]">{t("song.miss")}</span>
-                      )}
-                      {view.settings.answerMode !== "artist" && (
-                        <span className={view.myProgress.titleMatched ? "plaza-status-valid rounded px-1.5 py-0.5 font-semibold" : "plaza-muted"}>
-                          {t("song.titleLabel")} {view.myProgress.titleMatched ? "✓" : "…"}
-                        </span>
-                      )}
-                      {view.settings.answerMode !== "title" && (
-                        <span className={view.myProgress.artistMatched ? "plaza-status-valid rounded px-1.5 py-0.5 font-semibold" : "plaza-muted"}>
-                          {t("song.artistLabel")} {view.myProgress.artistMatched ? "✓" : "…"}
-                        </span>
-                      )}
-                    </div>
-                  </form>
-                )}
-                {view.isHost && (
-                  <button
-                    type="button"
-                    disabled={isSending}
-                    onClick={() => void actionIntent({ kind: "end-round" })}
-                    className="plaza-ghost-button h-10 rounded-lg text-sm font-medium disabled:opacity-50"
-                  >
-                    {t("song.endRound")}
-                  </button>
-                )}
-              </>
-            )}
-
-            {view.phase === "round-end" && (
-              <>
-                {view.firstMatchPlayerId && (
-                  <p className="plaza-muted text-center text-sm">
-                    {t(
-                      "song.firstMatch",
-                      playersById.get(view.firstMatchPlayerId)?.nickname ?? "—",
-                    )}
-                  </p>
-                )}
-                <p className="plaza-muted text-center text-xs">
-                  {view.roundIndex + 1 >= view.effectiveRounds
-                    ? t("song.autoResults")
-                    : t("song.autoNextRound")}
-                </p>
-                {view.isHost && (
-                  <button
-                    type="button"
-                    disabled={isSending}
-                    onClick={() => void actionIntent({ kind: "next-round" })}
-                    className="plaza-ghost-button h-10 rounded-lg text-sm font-medium disabled:opacity-50"
-                  >
-                    {view.roundIndex + 1 >= view.effectiveRounds
-                      ? t("song.showResults")
-                      : t("song.nextRound")}
-                  </button>
-                )}
-              </>
-            )}
-
-            {scoreboard}
-          </div>
-        )}
-
-        {/* ------------------------------------------------ finished */}
-        {view.phase === "finished" && (
-          <div className="grid gap-5 p-4">
-            <div className="plaza-winner-card rounded-2xl px-5 py-8 text-center">
-              <p className="plaza-label">{t("alias.winner")}</p>
-              <p className="mt-2 text-3xl font-bold">{scoreRows[0]?.nickname ?? "—"}</p>
-              <p className="plaza-muted mt-1 text-sm">
-                {t("song.finalScore", view.scores[scoreRows[0]?.id ?? ""] ?? 0)}
+            {guessFlash === "miss" && (
+              <p className="text-center text-[0.72rem] text-[var(--plaza-danger)]" aria-live="polite">
+                {t("song.miss")}
               </p>
-            </div>
-            {scoreboard}
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                disabled={!view.isHost || isSending}
-                onClick={() => void actionIntent({ kind: "play-again" })}
-                className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
-              >
-                {view.isHost ? t("alias.playAgain") : t("gradovi.waitingForHost")}
-              </button>
-              <button
-                type="button"
-                disabled={!view.isHost || isSending}
-                onClick={() => void finishSession()}
-                className="plaza-button-secondary h-12 rounded-xl text-sm font-medium disabled:opacity-50"
-              >
-                {view.isHost ? t("gradovi.backToLaunchpad") : t("gradovi.waitingForHost")}
-              </button>
-            </div>
-            {!view.isHost && (
-              <p className="plaza-muted text-center text-xs">{t("gradovi.hostCloseNote")}</p>
             )}
           </div>
         )}
-      </div>
-    </div>
+
+        {view.phase === "round-end" && (
+          <p className="plaza-muted-2 text-center text-[0.72rem]">
+            {view.roundIndex + 1 >= view.effectiveRounds
+              ? t("song.autoResults")
+              : t("song.autoNextRound")}
+          </p>
+        )}
+
+        {scoreboard}
+        </RoomContent>
+      </RoomBody>
+
+      <RoomBottomBar>
+        <div className="plaza-muted flex items-center justify-between gap-2 text-[0.72rem]">
+          <span className="truncate">
+            {view.firstMatchPlayerId
+              ? t(
+                  "song.firstCorrect",
+                  playersById.get(view.firstMatchPlayerId)?.nickname ?? "—",
+                  FIRST_MATCH_BONUS,
+                )
+              : t("song.noFirstYet")}
+          </span>
+          <span className="shrink-0 truncate">{scoreLine}</span>
+        </div>
+        {roundProgress}
+        {view.isHost && (
+          <button
+            type="button"
+            disabled={isSending}
+            onClick={() =>
+              void actionIntent({
+                kind: view.phase === "playing" ? "end-round" : "next-round",
+              })
+            }
+            className="plaza-ghost-button mx-auto rounded-lg px-3 py-1.5 text-[0.78rem] font-medium disabled:opacity-50"
+          >
+            {view.phase === "playing"
+              ? t("song.endRound")
+              : view.roundIndex + 1 >= view.effectiveRounds
+                ? t("song.showResults")
+                : t("song.nextRound")}
+          </button>
+        )}
+      </RoomBottomBar>
+    </>
+  );
+}
+
+function MatchChip({ matched, label }: { matched: boolean; label: string }) {
+  return (
+    <span
+      className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[0.72rem] font-semibold ${
+        matched
+          ? "border border-[color-mix(in_srgb,var(--plaza-success)_36%,var(--plaza-line))] plaza-status-valid"
+          : "plaza-subtle border border-[var(--plaza-line)] text-[var(--plaza-muted)]"
+      }`}
+    >
+      {matched && <CheckIcon size={13} />}
+      {label}
+    </span>
   );
 }
 

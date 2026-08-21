@@ -3,57 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { usePreferences } from "./preferences-provider";
+import { CloseIcon, QrIcon, ShareIcon } from "./room-icons";
 
-// Inline icons — keeps the bundle dependency-free and lets them inherit color.
-function ShareIcon() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 16V4" />
-      <path d="m7 9 5-5 5 5" />
-      <path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" />
-    </svg>
-  );
-}
-
-function QrIcon() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <path d="M14 14h3v3" />
-      <path d="M21 14v.01" />
-      <path d="M14 21h3" />
-      <path d="M21 17v4" />
-    </svg>
-  );
-}
-
-// Sharing a room. The primary button opens the device's native share sheet
-// (the iOS/Android sheet where you pick WhatsApp, Messages, etc.). A secondary
-// button opens our own dialog with a QR code + copy-link for desktop or for
-// scanning across the table.
-export function ShareRoom({ code }: { code: string }) {
+// Sharing a room. Share + QR are the lobby's primary action pair, so they sit
+// side by side: the solid button opens the device's native share sheet, the
+// outlined one opens our own sheet with a real QR and a copyable link.
+//
+// `variant` matches the two placements in the redesign: the host's 40px hero
+// pair, and the 34px pair in the guest lobby's compact code row.
+export function ShareRoom({
+  code,
+  variant = "hero",
+}: {
+  code: string;
+  variant?: "hero" | "compact";
+}) {
   const { t } = usePreferences();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -70,7 +34,7 @@ export function ShareRoom({ code }: { code: string }) {
     () => typeof navigator !== "undefined" && typeof navigator.share === "function",
   );
 
-  // Render the QR once we know the URL and the dialog is open (lazy — no work otherwise).
+  // Render the QR once we know the URL and the sheet is open (lazy — no work otherwise).
   useEffect(() => {
     if (!open || !shareUrl) return;
     let active = true;
@@ -90,7 +54,7 @@ export function ShareRoom({ code }: { code: string }) {
     };
   }, [open, shareUrl]);
 
-  // Close on Escape and lock body scroll while the dialog is up.
+  // Close on Escape and lock body scroll while the sheet is up.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -124,7 +88,7 @@ export function ShareRoom({ code }: { code: string }) {
     }
   }
 
-  // Primary action: native sheet where it exists, our dialog where it doesn't.
+  // Primary action: native sheet where it exists, our sheet where it doesn't.
   function handleShare() {
     if (canNativeShare) {
       void nativeShare();
@@ -144,77 +108,87 @@ export function ShareRoom({ code }: { code: string }) {
     }
   }
 
+  const compact = variant === "compact";
+  const buttonSize = compact
+    ? "h-[2.125rem] rounded-[0.625rem] px-3 text-xs"
+    : "h-10 rounded-xl px-[1.125rem] text-[0.84rem]";
+
   return (
     <>
-      <div className="flex items-center gap-2.5">
+      <div className={`flex items-center ${compact ? "gap-1.5" : "gap-2"}`}>
         <button
           type="button"
           onClick={handleShare}
-          className="plaza-share-trigger plaza-share-trigger--primary inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold"
+          className={`plaza-share-trigger plaza-share-trigger--primary rm-action ${buttonSize}`}
         >
-          <ShareIcon />
+          <ShareIcon size={compact ? 14 : 16} />
           {t("share.button")}
         </button>
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="plaza-share-trigger inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold"
+          className={`plaza-share-trigger rm-action ${buttonSize}`}
         >
-          <QrIcon />
-          {t("share.qrButton")}
+          <QrIcon size={compact ? 14 : 16} />
+          {compact ? t("share.qrShort") : t("share.qrButton")}
         </button>
       </div>
 
       {open && (
         <div
-          className="plaza-share-overlay fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+          className="plaza-share-overlay fixed inset-0 z-50 flex items-end justify-center"
           onClick={() => setOpen(false)}
           role="dialog"
           aria-modal="true"
-          aria-label={t("share.title")}
+          aria-label={t("share.inviteTitle")}
         >
           <div
-            className="plaza-share-sheet w-full max-w-sm p-6"
+            className="plaza-share-sheet mx-2.5 mb-2.5 grid w-full max-w-[24.4rem] gap-[1.125rem] rounded-3xl p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="plaza-label">{t("share.qrTitle")}</p>
-                <p className="plaza-muted mt-1 text-sm">{t("share.qrSubtitle")}</p>
+              <div className="grid gap-1">
+                <p className="plaza-display text-[1.125rem] font-extrabold">
+                  {t("share.inviteTitle")}
+                </p>
+                <p className="plaza-muted text-[0.78rem]">{t("share.inviteSubtitle")}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label={t("share.close")}
-                className="plaza-share-close shrink-0 text-xl leading-none"
+                className="rm-icon-button"
               >
-                ✕
+                <CloseIcon />
               </button>
             </div>
 
-            <div className="plaza-share-qr mx-auto mt-5 grid aspect-square w-48 place-items-center rounded-2xl p-3">
-              {qrDataUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- client-generated data URL
-                <img
-                  src={qrDataUrl}
-                  alt={t("share.qrAlt", code)}
-                  className="h-full w-full rounded-lg"
-                />
-              ) : (
-                <span className="plaza-muted-2 text-xs">…</span>
-              )}
+            {/* The QR is for scanning across the table; the code is repeated
+                underneath so it can also just be read out loud. */}
+            <div className="grid justify-items-center gap-3">
+              <div className="plaza-share-qr grid h-[12.875rem] w-[12.875rem] place-items-center rounded-[1.25rem] p-3">
+                {qrDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- client-generated data URL
+                  <img
+                    src={qrDataUrl}
+                    alt={t("share.qrAlt", code)}
+                    className="h-full w-full rounded-xl"
+                  />
+                ) : (
+                  <span className="plaza-muted-2 text-xs">…</span>
+                )}
+              </div>
+              <span className="rm-numeric text-[0.94rem] font-bold tracking-[0.2em]">{code}</span>
             </div>
 
-            <p className="plaza-muted-2 mt-3 text-center text-xs">{t("share.scanHint")}</p>
-
-            <div className="plaza-share-link mt-5 flex items-center gap-2 rounded-lg px-3 py-2">
-              <span className="min-w-0 flex-1 truncate font-mono text-sm" title={shareUrl}>
+            <div className="plaza-share-link flex items-center gap-2.5 rounded-xl px-3 py-2.5">
+              <span className="rm-numeric min-w-0 flex-1 truncate text-[0.78rem]" title={shareUrl}>
                 {shareUrl.replace(/^https?:\/\//, "")}
               </span>
               <button
                 type="button"
                 onClick={() => void copyLink()}
-                className="plaza-share-copy shrink-0 rounded-md px-2.5 py-1 text-xs font-bold"
+                className="plaza-share-copy shrink-0 rounded-lg px-2.5 py-1.5 text-[0.69rem] font-extrabold"
               >
                 {copied ? t("share.copied") : t("share.copy")}
               </button>
@@ -227,10 +201,10 @@ export function ShareRoom({ code }: { code: string }) {
                   setOpen(false);
                   void nativeShare();
                 }}
-                className="plaza-button mt-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-extrabold"
+                className="plaza-button rm-cta"
               >
                 <ShareIcon />
-                {t("share.shareVia")}
+                {t("share.shareViaCta")}
               </button>
             )}
           </div>

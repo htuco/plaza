@@ -13,6 +13,7 @@
 
 # local agent/editor caches
 /.venv
+/.playwright-mcp
 
 # AI workflow: config + skills are committed, local caches/scratch are not
 /.claude/*

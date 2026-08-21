@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
+import { RoomBody, RoomBottomBar, RoomContent, RoomSplit } from "@/components/room-shell";
+import {
+  PhaseHeader,
+  RoomError,
+  RoomLoading,
+  StandingRow,
+  WaitingNote,
+} from "@/components/room-game-ui";
+import { ArrowDownIcon, ArrowUpIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
 import { subscribeToRoom } from "@/lib/realtime/channels";
 import type { HigherLowerIntent, HigherLowerView } from "./types";
@@ -123,14 +132,9 @@ export function HigherLowerClient({ roomCode, playerId }: { roomCode: string; pl
 
   if (!snapshot || !view) {
     return (
-      <div className="plaza-panel rounded-xl p-5">
-        <div className="plaza-skeleton h-5 w-32 rounded" />
-        <div className="mt-4 grid gap-2">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="plaza-skeleton h-12 rounded-lg" />
-          ))}
-        </div>
-      </div>
+      <RoomBody>
+        <RoomLoading rows={3} />
+      </RoomBody>
     );
   }
 
@@ -140,166 +144,181 @@ export function HigherLowerClient({ roomCode, playerId }: { roomCode: string; pl
     (a, b) => b[1].position - a[1].position,
   );
 
-  const scoreboard = (
-    <section aria-label={t("higherLower.scoreboard")} className="grid gap-2">
-      <h3 className="plaza-label">{t("higherLower.scoreboard")}</h3>
-      <div className="grid gap-2 sm:grid-cols-2">
+  const standings = (
+    <section
+      className="plaza-panel flex min-h-0 flex-col gap-2.5 rounded-[1.125rem] p-4"
+      aria-label={t("higherLower.scoreboard")}
+    >
+      <h3 className="rm-eyebrow">{t("higherLower.scoreboard")}</h3>
+      <ul className="grid gap-2 overflow-y-auto">
         {sortedProgress.map(([id, entry]) => (
-          <div
+          <StandingRow
             key={id}
-            className={`plaza-team-card rounded-xl px-3.5 py-2.5 ${
-              !entry.alive ? "opacity-70" : ""
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-2 text-sm font-semibold">
-                {playersById.get(id)?.nickname ?? "—"}
-                {id === playerId && (
-                  <span className="plaza-muted-2 text-xs font-normal">{t("gradovi.you")}</span>
-                )}
-                {!entry.alive && (
-                  <span className="plaza-muted-2 text-xs font-normal">{t("higherLower.out")}</span>
-                )}
-              </span>
-              <span className="font-mono text-lg font-bold tabular-nums">{entry.position}</span>
-            </div>
-          </div>
+            name={playersById.get(id)?.nickname ?? "—"}
+            score={entry.position}
+            isMe={id === playerId}
+            youLabel={t("gradovi.you")}
+            dimmed={!entry.alive}
+            note={!entry.alive ? t("higherLower.out") : undefined}
+          />
         ))}
-      </div>
+      </ul>
     </section>
   );
 
-  return (
-    <div className="grid gap-4">
-      <div className="plaza-panel rounded-xl">
-        <div className="plaza-divider border-b p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="plaza-label">
-                {view.phase === "setup" && t("higherLower.phase.setup")}
-                {view.phase === "playing" && t(`higherLower.category.${view.category ?? "trivia"}`)}
-                {view.phase === "finished" && t("higherLower.phase.finished")}
-              </p>
-              <h2 className="truncate text-lg font-semibold">
-                {view.phase === "setup" && t("higherLower.setupTitle")}
-                {view.phase === "playing" && t("higherLower.playingTitle")}
-                {view.phase === "finished" && t("higherLower.finishedTitle")}
-              </h2>
-            </div>
+  // ---------------------------------------------------------------- setup
+  if (view.phase === "setup") {
+    return (
+      <>
+        <PhaseHeader
+          eyebrow={t("higherLower.phase.setup")}
+          title={t("higherLower.setupTitle")}
+        />
+        <RoomBody center className="p-5 sm:p-6">
+          <RoomContent className="gap-4">
+            {error && <RoomError message={error} />}
+            <p className="plaza-muted text-center text-[0.84rem] leading-relaxed">
+              {t("higherLower.rulesHint")}
+            </p>
+          </RoomContent>
+        </RoomBody>
+        <RoomBottomBar>
+          {view.isHost ? (
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void sendIntent({ kind: "start-game" })}
+              className="plaza-button rm-cta disabled:opacity-50"
+            >
+              {t("higherLower.startGame")}
+            </button>
+          ) : (
+            <WaitingNote>{t("higherLower.waitingForSetup")}</WaitingNote>
+          )}
+        </RoomBottomBar>
+      </>
+    );
+  }
+
+  // ------------------------------------------------------------- finished
+  if (view.phase === "finished") {
+    return (
+      <>
+        <PhaseHeader
+          eyebrow={t("higherLower.phase.finished")}
+          title={t("higherLower.finishedTitle")}
+        />
+        <RoomBody className="p-5 sm:p-6">
+          <RoomContent className="gap-3.5">
+          {error && <RoomError message={error} />}
+          <div className="plaza-winner-card rounded-3xl px-5 py-7 text-center">
+            <p className="rm-eyebrow">{t("higherLower.winner")}</p>
+            <p className="rm-display mt-2 text-[1.75rem] font-extrabold">
+              {view.winnerPlayerIds.length > 1
+                ? t("alias.tie")
+                : playersById.get(view.winnerPlayerIds[0])?.nickname ?? "—"}
+            </p>
           </div>
-        </div>
-
-        {error && <div className="plaza-error border-b px-4 py-3 text-sm">{error}</div>}
-
-        {/* ------------------------------------------------ setup */}
-        {view.phase === "setup" && (
-          <div className="grid gap-5 p-4">
-            <p className="plaza-muted text-sm">{t("higherLower.rulesHint")}</p>
-            {view.isHost ? (
+          {standings}
+          </RoomContent>
+        </RoomBody>
+        <RoomBottomBar note={!view.isHost ? t("gradovi.hostCloseNote") : undefined}>
+          {view.isHost ? (
+            <>
               <button
                 type="button"
                 disabled={isSending}
-                onClick={() => void sendIntent({ kind: "start-game" })}
-                className="plaza-button h-12 rounded-xl text-base font-semibold disabled:opacity-50"
-              >
-                {t("higherLower.startGame")}
-              </button>
-            ) : (
-              <p className="plaza-muted text-sm">{t("higherLower.waitingForSetup")}</p>
-            )}
-          </div>
-        )}
-
-        {/* ------------------------------------------------ playing */}
-        {view.phase === "playing" && (
-          <div className="grid gap-4 p-4">
-            {view.alive ? (
-              <>
-                <div className="plaza-word-card plaza-word-card--crew rounded-2xl px-5 py-7 text-center">
-                  <p className="plaza-word-card__label">{t("higherLower.current")}</p>
-                  <p className="plaza-word-card__word text-2xl">{currentItem?.label ?? "…"}</p>
-                  <p className="mt-2 font-mono text-3xl font-bold tabular-nums">
-                    {currentItem ? formatValue(currentItem.value) : "—"}
-                    <span className="plaza-muted ml-2 text-sm font-normal">{currentItem?.unit}</span>
-                  </p>
-                </div>
-
-                <div className="plaza-subtle rounded-2xl px-5 py-6 text-center">
-                  <p className="plaza-word-card__label">{t("higherLower.next")}</p>
-                  <p className="mt-1 text-xl font-semibold">{view.nextLabel ?? "…"}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    disabled={isSending}
-                    onClick={() => void sendIntent({ kind: "guess", direction: "lower" })}
-                    className="plaza-action-skip h-16 rounded-2xl text-lg font-bold disabled:opacity-50"
-                  >
-                    ▼ {t("higherLower.lower")}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSending}
-                    onClick={() => void sendIntent({ kind: "guess", direction: "higher" })}
-                    className="plaza-action-correct h-16 rounded-2xl text-lg font-bold disabled:opacity-50"
-                  >
-                    ▲ {t("higherLower.higher")}
-                  </button>
-                </div>
-
-                <p className="plaza-muted text-center text-sm">
-                  {t("higherLower.chainLength", view.position)}
-                </p>
-              </>
-            ) : (
-              <div className="plaza-subtle rounded-2xl px-5 py-8 text-center">
-                <p className="text-lg font-semibold">{t("higherLower.youAreOut")}</p>
-                <p className="plaza-muted mt-1 text-sm">
-                  {t("higherLower.finalChainLength", view.position)}
-                </p>
-              </div>
-            )}
-            {scoreboard}
-          </div>
-        )}
-
-        {/* ------------------------------------------------ finished */}
-        {view.phase === "finished" && (
-          <div className="grid gap-5 p-4">
-            <div className="plaza-winner-card rounded-2xl px-5 py-8 text-center">
-              <p className="plaza-label">{t("higherLower.winner")}</p>
-              <p className="mt-2 text-3xl font-bold">
-                {view.winnerPlayerIds.length > 1
-                  ? t("alias.tie")
-                  : playersById.get(view.winnerPlayerIds[0])?.nickname ?? "—"}
-              </p>
-            </div>
-            {scoreboard}
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                disabled={!view.isHost || isSending}
                 onClick={() => void sendIntent({ kind: "play-again" })}
-                className="plaza-button h-12 rounded-xl text-sm font-semibold disabled:opacity-50"
+                className="plaza-button rm-cta disabled:opacity-50"
               >
-                {view.isHost ? t("alias.playAgain") : t("gradovi.waitingForHost")}
+                {t("alias.playAgain")}
               </button>
               <button
                 type="button"
-                disabled={!view.isHost || isSending}
+                disabled={isSending}
                 onClick={() => void finishSession()}
-                className="plaza-button-secondary h-12 rounded-xl text-sm font-medium disabled:opacity-50"
+                className="plaza-ghost-button mx-auto rounded-lg px-3 py-1.5 text-[0.78rem] font-medium disabled:opacity-50"
               >
-                {view.isHost ? t("gradovi.backToLaunchpad") : t("gradovi.waitingForHost")}
+                {t("gradovi.backToLaunchpad")}
               </button>
-            </div>
-            {!view.isHost && (
-              <p className="plaza-muted text-center text-xs">{t("gradovi.hostCloseNote")}</p>
-            )}
-          </div>
-        )}
+            </>
+          ) : (
+            <WaitingNote>{t("gradovi.waitingForHost")}</WaitingNote>
+          )}
+        </RoomBottomBar>
+      </>
+    );
+  }
+
+  // -------------------------------------------------------- 08 · playing
+  return (
+    <RoomBody className="p-5 sm:p-6">
+      <RoomSplit aside={standings}>
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-1">
+      {error && <RoomError message={error} />}
+
+      <div className="flex items-center justify-between gap-2">
+        <span className="rm-eyebrow">{t("higherLower.streak", view.position)}</span>
+        <span className="plaza-muted-2 text-[0.72rem]">
+          {t("higherLower.categoryLabel", t(`higherLower.category.${view.category ?? "trivia"}`))}
+        </span>
       </div>
-    </div>
+
+      {view.alive ? (
+        <>
+          {/* The confirmed item, with its real value. */}
+          <div className="rm-value-card">
+            <span className="rm-eyebrow">{t("higherLower.current")}</span>
+            <span className="text-[1.1875rem] font-semibold">{currentItem?.label ?? "…"}</span>
+            <span className="rm-numeric mt-1.5 text-[2.125rem] font-extrabold">
+              {currentItem ? formatValue(currentItem.value) : "—"}
+              {currentItem?.unit && (
+                <span className="plaza-muted ml-1.5 font-[family-name:var(--font-geist-sans)] text-[0.81rem] font-medium">
+                  {currentItem.unit}
+                </span>
+              )}
+            </span>
+          </div>
+
+          {/* Only the next item's label is ever sent — the value is the secret. */}
+          <div className="rm-value-card rm-value-card--next">
+            <span className="rm-eyebrow">{t("higherLower.next")}</span>
+            <span className="text-[1.1875rem] font-semibold">{view.nextLabel ?? "…"}</span>
+            <span className="rm-numeric mt-1.5 text-[2.125rem] font-extrabold text-[var(--plaza-muted-2)]">
+              ? ? ?
+            </span>
+          </div>
+
+          <div className="flex gap-2.5">
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void sendIntent({ kind: "guess", direction: "lower" })}
+              className="rm-answer rm-answer--lower"
+            >
+              <ArrowDownIcon /> {t("higherLower.lower")}
+            </button>
+            <button
+              type="button"
+              disabled={isSending}
+              onClick={() => void sendIntent({ kind: "guess", direction: "higher" })}
+              className="rm-answer rm-answer--higher"
+            >
+              <ArrowUpIcon /> {t("higherLower.higher")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="rm-value-card rm-value-card--next py-8">
+          <p className="text-[1.0625rem] font-semibold">{t("higherLower.youAreOut")}</p>
+          <p className="plaza-muted mt-1 text-[0.81rem]">
+            {t("higherLower.finalChainLength", view.position)}
+          </p>
+        </div>
+      )}
+
+      </div>
+      </RoomSplit>
+    </RoomBody>
   );
 }

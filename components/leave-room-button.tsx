@@ -6,12 +6,17 @@ import { usePreferences } from "./preferences-provider";
 
 // "Leave room" with an inline confirmation dialog. Hosts get an extra note
 // because leaving hands the room to the next player (or closes it).
+//
+// `label` lets the in-game top bar use the shorter "Izađi" while the lobby
+// keeps the full "Napusti sobu".
 export function LeaveRoomButton({
   roomCode,
   isHost,
+  label = "leave.action",
 }: {
   roomCode: string;
   isHost: boolean;
+  label?: "leave.action" | "room.exit";
 }) {
   const router = useRouter();
   const { t } = usePreferences();
@@ -45,9 +50,9 @@ export function LeaveRoomButton({
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        className="plaza-ghost-button h-9 shrink-0 rounded-lg px-3 text-xs font-medium"
+        className="plaza-button-secondary h-8 shrink-0 rounded-[0.625rem] px-3 text-xs font-medium"
       >
-        {t("leave.action")}
+        {t(label)}
       </button>
 
       {open && (
@@ -60,19 +65,19 @@ export function LeaveRoomButton({
             if (event.target === event.currentTarget && !leaving) setOpen(false);
           }}
         >
-          <div className="plaza-modal">
-            <h2 className="text-lg font-semibold">{t("leave.title")}</h2>
-            <p className="plaza-muted mt-1.5 text-sm">
+          <div className="plaza-modal plaza-modal--confirm grid gap-2">
+            <h2 className="plaza-display text-[1.125rem] font-extrabold">{t("leave.title")}</h2>
+            <p className="plaza-muted text-[0.81rem] leading-relaxed">
               {isHost ? t("leave.hostNote") : t("leave.note")}
             </p>
-            {error && <p className="mt-2 text-sm text-[var(--plaza-danger)]">{error}</p>}
-            <div className="mt-5 grid grid-cols-2 gap-2">
+            {error && <p className="plaza-error mt-1 rounded-lg px-3 py-2 text-sm">{error}</p>}
+            <div className="mt-3.5 grid grid-cols-2 gap-2.5">
               <button
                 type="button"
                 autoFocus
                 disabled={leaving}
                 onClick={() => setOpen(false)}
-                className="plaza-button-secondary h-11 rounded-lg text-sm font-medium disabled:opacity-50"
+                className="plaza-button-secondary h-12 rounded-[0.875rem] text-sm font-semibold disabled:opacity-50"
               >
                 {t("leave.stay")}
               </button>
@@ -80,7 +85,7 @@ export function LeaveRoomButton({
                 type="button"
                 disabled={leaving}
                 onClick={() => void leave()}
-                className="plaza-button-danger h-11 rounded-lg text-sm font-medium disabled:opacity-60"
+                className="plaza-button-danger h-12 rounded-[0.875rem] text-sm font-bold disabled:opacity-60"
               >
                 {leaving ? "…" : t("leave.confirm")}
               </button>

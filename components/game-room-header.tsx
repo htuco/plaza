@@ -2,12 +2,14 @@
 
 import type { GameId } from "@/lib/db/schema";
 import { usePreferences } from "./preferences-provider";
-import { GAME_ICONS } from "./game-icons";
+import { GameIcon } from "./game-icons";
 import { LeaveRoomButton } from "./leave-room-button";
 import { RoomCode } from "./room-code";
+import { RoomTopBar } from "./room-shell";
 
-// In-game shell header: game identity on the left, room code + leave on the
-// right. Stays in normal flow so the fixed floating timers keep their spot.
+// In-game top bar: game identity on the left, room code + exit on the right.
+// Same 56px bar as the lobby, so switching from lobby to game never shifts the
+// content underneath.
 export function GameRoomHeader({
   gameId,
   roomCode,
@@ -20,17 +22,17 @@ export function GameRoomHeader({
   const { gameCopy } = usePreferences();
 
   return (
-    <header className="plaza-panel mb-4 flex items-center justify-between gap-3 px-3 py-2.5">
-      <h1 className="flex min-w-0 items-center gap-2.5 text-lg font-bold">
-        <span className="plaza-game-tile__icon shrink-0" aria-hidden="true">
-          {GAME_ICONS[gameId]}
+    <RoomTopBar>
+      <h1 className="flex min-w-0 items-center gap-2.5">
+        <GameIcon gameId={gameId} size={32} />
+        <span className="truncate text-[0.94rem] font-semibold">
+          {gameCopy(gameId).displayName}
         </span>
-        <span className="plaza-display truncate">{gameCopy(gameId).displayName}</span>
       </h1>
       <div className="flex shrink-0 items-center gap-2">
         <RoomCode code={roomCode} size="sm" />
-        <LeaveRoomButton roomCode={roomCode} isHost={isHost} />
+        <LeaveRoomButton roomCode={roomCode} isHost={isHost} label="room.exit" />
       </div>
-    </header>
+    </RoomTopBar>
   );
 }
