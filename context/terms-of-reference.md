@@ -106,6 +106,7 @@ Record each resolved decision with date + short rationale. Newest on top.
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-09-23 | Veće ili Manje: **one metric (monthly Google searches)** + **synchronized timed rounds with lives** | old deck mixed units (followers vs. years); the solo race had no shared moment — user asked for both |
 | 2026-08-21 | Room-surface redesign implemented as **structure only**: the design handoff's layout, hierarchy, geometry and copy were applied, but the existing warm "kasna večer za stolom" palette and type (Geist / Bricolage / Geist Mono) were kept instead of the handoff's dark `#0F0F16` / `#6C69FF` scene with Poppins + JetBrains Mono | The user instructed mid-build to keep the theme and only move things around; room screens therefore stay in one visual system with the landing page and keep following the light/dark preference |
 | 2026-08-21 | The room shell is **mobile-first but not phone-only**: full-bleed column on a phone, framed column from 640px, and a wider desktop shell where screens with two jobs (lobby, Asocijacije, Gradovi i Sela, Veće ili Manje) split into two panes | The handoff draws a fixed 390 × 844 phone; the user asked for desktop to be a real size rather than a phone in a box |
 | 2026-08-21 | Each game client owns its own bottom bar inside the shared shell, rather than the shell rendering one action slot | Every game's primary action differs per phase, and this keeps the CTA in the same screen position across games without the shell knowing game internals |

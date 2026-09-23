@@ -1,61 +1,109 @@
-export type Phase = "setup" | "playing" | "finished";
+export type Phase = "setup" | "guessing" | "reveal" | "finished";
 
-export type HigherLowerCategory = "internet" | "trivia" | "regional";
+// Topic filters only — every item is compared on the same metric
+// (average monthly Google searches), so any two items are comparable.
+export type HigherLowerCategory =
+  | "poznati"
+  | "sport"
+  | "film-muzika"
+  | "hrana"
+  | "brendovi-tech"
+  | "mjesta"
+  | "historija-pojmovi"
+  | "regional";
+
+export type CategoryChoice = HigherLowerCategory | "miks";
 
 export type GuessDirection = "higher" | "lower";
 
-// Authoritative per-player progress. `position` is the index of the last
-// item this player has confirmed (revealed); a wrong guess freezes it.
-export interface PlayerProgress {
-  position: number;
-  alive: boolean;
+export const ROUND_OPTIONS = [10, 15, 20] as const;
+export const LIVES_OPTIONS = [1, 3, 5] as const;
+export const TIMER_OPTIONS = [8, 12, 20] as const;
+
+export interface HigherLowerSettings {
+  category: CategoryChoice;
+  rounds: number;
+  lives: number;
+  timerSeconds: number;
 }
 
-// Authoritative server state. `items` (and any value beyond a player's own
-// `position`) is the secret — a player must never learn the value of an
-// item they have not personally confirmed yet.
+export interface HigherLowerItem {
+  id: string;
+  label: string;
+  category: HigherLowerCategory;
+  searches: number;
+}
+
+export interface RoundResult {
+  correct: boolean;
+  points: number;
+}
+
+// Authoritative per-player state. `answer` is secret from other players
+// until the round is revealed.
+export interface PlayerState {
+  score: number;
+  lives: number;
+  streak: number;
+  bestStreak: number;
+  answer: GuessDirection | null;
+  answeredAt: number | null; // epoch ms, drives the speed bonus
+  lastResult: RoundResult | null;
+  spectator: boolean; // joined mid-game — watches until play-again
+}
+
+// Authoritative server state. `items[round]` (the next item) keeps its
+// `searches` value secret until the reveal phase.
 export interface HigherLowerState {
+  version: 2;
   phase: Phase;
-  category: HigherLowerCategory | null;
-  items: HigherLowerRoundItem[]; // shuffled order for this round
-  progress: Record<string, PlayerProgress>;
+  settings: HigherLowerSettings;
+  items: HigherLowerItem[];
+  // 1-based. Current item = items[round - 1], guessed item = items[round].
+  round: number;
+  deadlineAt: number | null;
+  revealAdvanceAt: number | null;
+  players: Record<string, PlayerState>;
   hostId: string;
 }
 
-export interface HigherLowerRoundItem {
-  id: string;
+export interface HigherLowerCard {
   label: string;
-  value: number;
-  unit: string;
-}
-
-export interface HigherLowerRevealedItem {
-  label: string;
-  value: number;
-  unit: string;
+  category: HigherLowerCategory;
+  searches: number | null; // null = still hidden
 }
 
 export interface HigherLowerPlayerView {
-  position: number;
-  alive: boolean;
+  score: number;
+  lives: number;
+  streak: number;
+  bestStreak: number;
+  answered: boolean;
+  // Only filled in during reveal / finished — never while guessing.
+  answer: GuessDirection | null;
+  lastResult: RoundResult | null;
+  spectator: boolean;
 }
 
 export interface HigherLowerView {
   phase: Phase;
-  category: HigherLowerCategory | null;
-  // This player's own confirmed chain — index 0..position, real values.
-  revealed: HigherLowerRevealedItem[];
-  // Next item's label only (no value) — null once this player is out or the deck ends.
-  nextLabel: string | null;
-  nextUnit: string | null;
-  alive: boolean;
-  position: number;
-  progress: Record<string, HigherLowerPlayerView>;
+  settings: HigherLowerSettings;
+  round: number;
+  current: HigherLowerCard | null;
+  next: HigherLowerCard | null;
+  correctDirection: GuessDirection | null; // reveal / finished only
+  deadlineAt: number | null;
+  revealAdvanceAt: number | null;
+  isLastRound: boolean;
+  myAnswer: GuessDirection | null;
+  players: Record<string, HigherLowerPlayerView>;
   winnerPlayerIds: string[];
   isHost: boolean;
 }
 
 export type HigherLowerIntent =
-  | { kind: "start-game" } // host, setup -> playing
-  | { kind: "guess"; direction: GuessDirection } // any alive player
+  | { kind: "update-settings"; settings: Partial<HigherLowerSettings> } // host, setup
+  | { kind: "start-game" } // host, setup -> guessing
+  | { kind: "guess"; direction: GuessDirection } // alive player, guessing
+  | { kind: "advance" } // anyone past a deadline; host may skip the reveal
   | { kind: "play-again" }; // host, finished -> setup

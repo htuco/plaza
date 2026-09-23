@@ -40,7 +40,7 @@ export interface GameMeta {
 export const GAMES: readonly GameMeta[] = [
   {
     id: "imposteri",
-    displayName: "Imposteri",
+    displayName: "Uljez",
     tagline: "Find who doesn't know the secret word.",
     minPlayers: 3,
     maxPlayers: 12,
@@ -48,7 +48,7 @@ export const GAMES: readonly GameMeta[] = [
   },
   {
     id: "alias",
-    displayName: "Alias",
+    displayName: "Pseudonim",
     tagline: "Explain the word — just never say it.",
     minPlayers: 4,
     maxPlayers: 16,
@@ -72,7 +72,7 @@ export const GAMES: readonly GameMeta[] = [
   },
   {
     id: "guess-the-song",
-    displayName: "Guess the Song",
+    displayName: "Pogodi pjesmu",
     tagline: "Name the track before anyone else.",
     minPlayers: 2,
     maxPlayers: 12,
