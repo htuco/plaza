@@ -447,4 +447,31 @@ next.
 - Room actions for the host: pick game and start game (completed before Gradovi work continued).
 - Server route for client → server intents per game (done via `/api/rooms/[room]/intent`).
 - Run the first `drizzle-kit generate` + `migrate` against a real Supabase project, then push to Vercel for a Preview deploy.
-- Replace eslint warning escape hatches in `features/index.ts` once a cleaner cross-game type union is settled.
+- Replace eslint warning escape hatches in `features/index.ts` once a cleaner cross-game type union is settled.## Current
+
+**Feature:** Veće ili Manje — overhaul (Google searches, synchronized rounds)
+**Status:** PR #9 open, pending phone QA
+**Date:** 2026-09-23
+
+**Summary**
+- One metric for every item: average monthly Google searches. 208 curated items in 8 topics + Miks. No mixed units anymore.
+- Synchronized timed rounds: everyone guesses the same pair, server deadline, lives, speed bonus, streak multipliers (×1.5 at 3+, ×2 at 6+).
+- Host settings: category, rounds 10/15/20, lives 1/3/5, timer 8/12/20 s.
+- Reveal phase with count-up and per-player picks; picks and next value stay server-side while guessing. Finished screen with podium and best streaks.
+
+**Touched**
+- `features/higher-lower/{types,items,module,client,components}.tsx`
+- `components/preferences-provider.tsx`, `app/room.css`
+- `context/{terms-of-reference,features/higher-lower-overhaul}.md`
+
+**Decisions**
+- Google searches chosen as the single metric at the user's request; numbers are rounded estimates, static deck.
+- Deadlines are nudged by any client via `advance`, and the server re-checks them (same pattern as gradovi-i-sela / guess-the-song).
+- Late joiners are spectators until play-again; pre-overhaul stored state falls back to setup.
+
+**Open / Next**
+- Phone QA on 2+ devices; sanity-check the search numbers during play.
+
+---
+
+
