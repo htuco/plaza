@@ -12,7 +12,7 @@ next.
 ## Current
 
 **Feature:** Veće ili Manje — overhaul (Google searches, synchronized rounds)
-**Status:** PR #9 open, pending phone QA
+**Status:** merged via PR #9, pending phone QA
 **Date:** 2026-09-23
 
 **Summary**
@@ -76,6 +76,31 @@ next.
 - Game icons are still emoji placeholders — the handoff asks for real icons.
 - `app/globals.css` now carries dead rules for the app screens the redesign replaced (old `.plaza-code-hero`, `.plaza-role-flip`, `.plaza-asoc-*`, etc.). Left in place deliberately to avoid touching landing styles in this PR; worth a follow-up `/cleanup` pass.
 - Refresh `context/project-overview.md`'s game table to match the live registry (still stale, flagged in prior features).
+
+### 2026-08-21 - Guess the Song — artist search, audio unlock fix, clip length & scoring (PR #7)
+
+**Feature:** Guess the Song — artist search, audio unlock fix, scoring modifiers
+**Status:** done (merged via PR #7)
+**Date:** 2026-08-21
+
+**Summary**
+- **Source search by artist:** a bare iTunes `term=` also matched song titles (`Magazin` pulled "White Denim — Magazin"). `attribute=artistTerm` is ignored for `entity=song`, so the artist is resolved first (`search?entity=musicArtist` → `lookup?id=…&entity=song`). All 20 curated presets verified against the live API.
+- **Silent first song fixed:** the unlock banner showed in setup, before the `<audio>` element existed, so the unlock tap bound to nothing and still persisted "unlocked". The element now mounts in every phase, unlock only counts when `play()` resolves, and round start waits for `canplay`.
+- **Clip length:** Heardle ladder 1/2/4/7/11/16/30 s (default 11). Picking a clip retunes the guess window; the host can override it. Random server-picked clip offset so every device plays the same segment.
+- **Replay button + volume slider** (volume persisted in `localStorage`, new `.plaza-range` style).
+- **Scoring:** speed bonus decaying over the guess window (server-side from `roundDeadlineAt`), short-clip multiplier ×3 … ×1, first-match bonus kept.
+
+**Touched**
+- `features/guess-the-song/{types,module,client}.tsx`, `lib/music/itunes.ts`
+- `app/api/rooms/[room]/songs/start/route.ts`, `components/preferences-provider.tsx`, `app/globals.css`
+
+**Decisions**
+- "Make it shorter" read as clip / guess window, not the UI.
+- Unresolvable artist → no tracks (existing error), no silent fallback to a broad search.
+
+**Open / Next**
+- Same-room mode (host-only audio), Heardle-style progressive reveal as its own mode, playlist browser with tags.
+- Phone QA of the unlock flow on iOS Safari.
 
 ### 2026-08-21 - Guess the Song — synchronized countdown & autoplay
 
