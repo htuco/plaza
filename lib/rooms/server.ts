@@ -1,5 +1,5 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { generateRoomCode, normalizeRoomCode } from "./code";
 
@@ -63,12 +63,15 @@ export async function joinRoom(opts: { code: string; anonId: string; nickname: s
 
 export async function getRoomByCode(code: string) {
   const normalized = normalizeRoomCode(code);
-  const room = await db.query.rooms.findFirst({ where: eq(schema.rooms.code, normalized) });
-  if (!room) return null;
+  // One round-trip: room + its players via a left join.
+  const rows = await db
+    .select({ room: schema.rooms, player: schema.players })
+    .from(schema.rooms)
+    .leftJoin(schema.players, eq(schema.players.roomId, schema.rooms.id))
+    .where(eq(schema.rooms.code, normalized))
+    .orderBy(asc(schema.players.connectedAt));
+  if (rows.length === 0) return null;
 
-  const players = await db.query.players.findMany({
-    where: eq(schema.players.roomId, room.id),
-  });
-
-  return { ...room, players };
+  const players = rows.flatMap((row) => (row.player ? [row.player] : []));
+  return { ...rows[0].room, players };
 }

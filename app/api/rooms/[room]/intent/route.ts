@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getGameModule } from "@/features";
 import { GRADOVI_LETTERS } from "@/features/gradovi-i-sela/types";
@@ -6,7 +6,7 @@ import type { GradoviState } from "@/features/gradovi-i-sela/types";
 import { db, schema } from "@/lib/db/client";
 import { broadcast } from "@/lib/realtime/server";
 import { getRoomByCode } from "@/lib/rooms/server";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/supabase/server";
 import type { GameId } from "@/lib/db/schema";
 
 type IntentBody = {
@@ -63,7 +63,7 @@ export async function POST(
   }
 
   const { room: code } = await params;
-  const room = await getRoomByCode(code);
+  const [room, userId] = await Promise.all([getRoomByCode(code), getCurrentUserId()]);
   if (!room) return NextResponse.json({ error: "Room not found." }, { status: 404 });
   if (room.status !== "in_game" || !room.gameId) {
     return NextResponse.json({ error: "Room is not in a game." }, { status: 409 });
@@ -72,11 +72,7 @@ export async function POST(
     return NextResponse.json({ error: "Wrong game for this room." }, { status: 409 });
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const me = room.players.find((p) => p.anonId === user?.id);
+  const me = room.players.find((p) => p.anonId === userId);
   if (!me) return NextResponse.json({ error: "Player not in room." }, { status: 403 });
 
   const gameModule = getGameModule(room.gameId);
@@ -182,10 +178,14 @@ export async function POST(
     }
   }
 
-  await broadcast(room.code, "game-event", {
-    gameId: room.gameId satisfies GameId,
-    updatedAt: result.savedAt.toISOString(),
-  });
+  // Notify the other players after responding, so the actor isn't kept waiting on it.
+  const gameId = room.gameId satisfies GameId;
+  after(() =>
+    broadcast(room.code, "game-event", {
+      gameId,
+      updatedAt: result.savedAt.toISOString(),
+    }),
+  );
 
   return NextResponse.json({
     ok: true,

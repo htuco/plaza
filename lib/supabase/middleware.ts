@@ -23,10 +23,12 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // getClaims() refreshes an expired session and verifies the JWT locally,
+  // instead of getUser()'s Auth round-trip on every single request.
+  const { data } = await supabase.auth.getClaims();
 
   // Guest-only: if no session, sign in anonymously so every visitor has a stable id.
-  if (!user) {
+  if (!data?.claims) {
     await supabase.auth.signInAnonymously();
   }
 

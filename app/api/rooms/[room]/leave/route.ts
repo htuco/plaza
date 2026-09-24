@@ -3,7 +3,7 @@ import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { broadcast } from "@/lib/realtime/server";
 import { getRoomByCode } from "@/lib/rooms/server";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/supabase/server";
 
 // A player leaves the room. Removes their seat, transfers host if needed,
 // closes the room when the last player walks out, and tells everyone else.
@@ -12,14 +12,10 @@ export async function POST(
   { params }: { params: Promise<{ room: string }> },
 ) {
   const { room: code } = await params;
-  const room = await getRoomByCode(code);
+  const [room, userId] = await Promise.all([getRoomByCode(code), getCurrentUserId()]);
   if (!room) return NextResponse.json({ error: "Room not found." }, { status: 404 });
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const me = room.players.find((p) => p.anonId === user?.id);
+  const me = room.players.find((p) => p.anonId === userId);
   // Already gone — treat as success so a stale client can just go home.
   if (!me) return NextResponse.json({ ok: true, left: true });
 

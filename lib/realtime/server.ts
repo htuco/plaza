@@ -10,7 +10,8 @@ export async function broadcast(
 ) {
   const supabase = await createServiceClient();
   const channel = supabase.channel(roomChannelName(roomCode));
-  await channel.send({ type: "broadcast", event, payload });
+  // httpSend posts straight to the REST endpoint — no socket handshake per call.
+  await channel.httpSend(event, payload);
   // Tear down so we don't leak channels per request.
   await supabase.removeChannel(channel);
 }

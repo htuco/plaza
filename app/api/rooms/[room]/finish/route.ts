@@ -3,21 +3,17 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { broadcast } from "@/lib/realtime/server";
 import { getRoomByCode } from "@/lib/rooms/server";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/supabase/server";
 
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ room: string }> },
 ) {
   const { room: code } = await params;
-  const room = await getRoomByCode(code);
+  const [room, userId] = await Promise.all([getRoomByCode(code), getCurrentUserId()]);
   if (!room) return NextResponse.json({ error: "Room not found." }, { status: 404 });
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const me = room.players.find((p) => p.anonId === user?.id);
+  const me = room.players.find((p) => p.anonId === userId);
   if (!me) return NextResponse.json({ error: "Player not in room." }, { status: 403 });
   if (!me.isHost) return NextResponse.json({ error: "Only the host can close the room." }, { status: 403 });
 
