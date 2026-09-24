@@ -13,7 +13,11 @@ import {
 } from "@/components/room-game-ui";
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CloseIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
-import { subscribeToRoom } from "@/lib/realtime/channels";
+import {
+  randomNudgeJitterMs,
+  shouldRefetchGameEvent,
+  subscribeToRoom,
+} from "@/lib/realtime/channels";
 import { Hearts, ItemCard, OptionGroup } from "./components";
 import {
   LIVES_OPTIONS,
@@ -66,9 +70,15 @@ export function HigherLowerClient({ roomCode, playerId }: { roomCode: string; pl
   const router = useRouter();
   const { localizeError, t } = usePreferences();
   const [snapshot, setSnapshot] = useState<HigherLowerSnapshot | null>(null);
+  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
+  const latestUpdatedAt = useRef<string | null>(null);
+  useEffect(() => {
+    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
+  }, [snapshot]);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [nudgeJitterMs] = useState(randomNudgeJitterMs);
   const autoAdvanceKey = useRef<string | null>(null);
 
   const loadState = useCallback(async () => {
@@ -139,8 +149,9 @@ export function HigherLowerClient({ roomCode, playerId }: { roomCode: string; pl
         return;
       }
       if (event.type === "game-event") {
-        const payload = event.payload as { gameId?: unknown };
-        if (payload.gameId === GAME_ID) void loadState();
+        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
+          void loadState();
+        }
       }
       if (event.type === "lobby-update") void loadState();
     });
@@ -164,12 +175,12 @@ export function HigherLowerClient({ roomCode, playerId }: { roomCode: string; pl
     if (!view) return;
     const deadline =
       view.phase === "guessing" ? view.deadlineAt : view.phase === "reveal" ? view.revealAdvanceAt : null;
-    if (deadline === null || now < deadline) return;
+    if (deadline === null || now < deadline + nudgeJitterMs) return;
     const key = `${view.phase}-${view.round}`;
     if (autoAdvanceKey.current === key) return;
     autoAdvanceKey.current = key;
     void sendIntent({ kind: "advance" }, { silent: true });
-  }, [now, sendIntent, view]);
+  }, [nudgeJitterMs, now, sendIntent, view]);
 
   if (!snapshot || !view) {
     return (

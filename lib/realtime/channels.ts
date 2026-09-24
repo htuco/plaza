@@ -44,3 +44,29 @@ export async function broadcastToRoom(
   const channel = supabase.channel(roomChannelName(roomCode));
   await channel.send({ type: "broadcast", event, payload });
 }
+
+// A `game-event` only says "state changed at updatedAt". Skip the refetch when our
+// snapshot is already that fresh (e.g. we sent the intent and applied its response).
+export function shouldRefetchGameEvent(
+  payload: unknown,
+  gameId: string,
+  latestUpdatedAt: string | null | undefined,
+): boolean {
+  const { gameId: eventGameId, updatedAt } = (payload ?? {}) as {
+    gameId?: unknown;
+    updatedAt?: unknown;
+  };
+  if (eventGameId !== gameId) return false;
+  if (typeof updatedAt !== "string" || !latestUpdatedAt) return true;
+  // Both are Date#toISOString() output, so string order is time order.
+  return updatedAt > latestUpdatedAt;
+}
+
+// Deadline nudges: every client races to tell the server "time's up". A random
+// per-client delay lets the first nudge's broadcast land before the rest fire,
+// so a phase change costs ~1 request instead of one per player.
+export const DEADLINE_NUDGE_MAX_JITTER_MS = 400;
+
+export function randomNudgeJitterMs(): number {
+  return Math.floor(Math.random() * DEADLINE_NUDGE_MAX_JITTER_MS);
+}

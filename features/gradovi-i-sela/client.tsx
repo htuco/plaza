@@ -13,7 +13,7 @@ import {
 } from "@/components/room-game-ui";
 import { CheckIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
-import { subscribeToRoom } from "@/lib/realtime/channels";
+import { shouldRefetchGameEvent, subscribeToRoom } from "@/lib/realtime/channels";
 import {
   DEFAULT_GRADOVI_SETTINGS,
   DEFAULT_GRADOVI_CATEGORIES,
@@ -26,7 +26,7 @@ import {
 import type { GradoviIntent, GradoviSettings, GradoviView } from "./types";
 
 const GAME_ID = "gradovi-i-sela";
-const AUTOSAVE_DELAY_MS = 350;
+const AUTOSAVE_DELAY_MS = 700;
 
 type PlayerSummary = {
   id: string;
@@ -80,6 +80,11 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
   const router = useRouter();
   const { localizeError, t } = usePreferences();
   const [snapshot, setSnapshot] = useState<GradoviSnapshot | null>(null);
+  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
+  const latestUpdatedAt = useRef<string | null>(null);
+  useEffect(() => {
+    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
+  }, [snapshot]);
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
   const [draftSettings, setDraftSettings] = useState<GradoviSettings>({
     ...DEFAULT_GRADOVI_SETTINGS,
@@ -199,8 +204,9 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
         return;
       }
       if (event.type === "game-event") {
-        const payload = event.payload as { gameId?: unknown };
-        if (payload.gameId === GAME_ID) void loadState();
+        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
+          void loadState();
+        }
       }
       if (event.type === "lobby-update") void loadState();
     });

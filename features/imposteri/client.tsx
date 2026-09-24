@@ -13,7 +13,11 @@ import {
 } from "@/components/room-game-ui";
 import { StarIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
-import { subscribeToRoom } from "@/lib/realtime/channels";
+import {
+  randomNudgeJitterMs,
+  shouldRefetchGameEvent,
+  subscribeToRoom,
+} from "@/lib/realtime/channels";
 import type { ImposteriIntent, ImposteriView } from "./types";
 
 const GAME_ID = "imposteri";
@@ -66,6 +70,11 @@ export function ImposteriClient({
   const router = useRouter();
   const { localizeError, t } = usePreferences();
   const [snapshot, setSnapshot] = useState<ImposteriSnapshot | null>(null);
+  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
+  const latestUpdatedAt = useRef<string | null>(null);
+  useEffect(() => {
+    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
+  }, [snapshot]);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [overlay, setOverlay] = useState<TransitionOverlay | null>(null);
@@ -188,16 +197,18 @@ export function ImposteriClient({
   const sendIntentSilent = useCallback(
     async (intent: ImposteriIntent) => {
       try {
-        await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/intent`, {
+        const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/intent`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ gameId: GAME_ID, intent }),
         });
+        // Apply the winner's state directly instead of waiting for broadcast + refetch.
+        if (response.ok) applySnapshot((await response.json()) as ImposteriSnapshot);
       } catch {
         // ignored
       }
     },
-    [roomCode],
+    [applySnapshot, roomCode],
   );
 
   async function finishSession() {
@@ -234,8 +245,9 @@ export function ImposteriClient({
         return;
       }
       if (event.type === "game-event") {
-        const payload = event.payload as { gameId?: unknown };
-        if (payload.gameId === GAME_ID) void loadState();
+        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
+          void loadState();
+        }
       }
     });
     return () => {
@@ -253,6 +265,7 @@ export function ImposteriClient({
 
   // Countdown for the vote phase.
   const [now, setNow] = useState<number>(() => Date.now());
+  const [nudgeJitterMs] = useState(randomNudgeJitterMs);
   useEffect(() => {
     if (view?.phase !== "vote" || !view.voteDeadlineAt) return;
     const interval = window.setInterval(() => setNow(Date.now()), 250);
@@ -270,7 +283,7 @@ export function ImposteriClient({
   useEffect(() => {
     if (view?.phase !== "vote" || !view.voteDeadlineAt || deadlineMs === null) return;
     const remaining = deadlineMs - now;
-    if (remaining > 0) return;
+    if (remaining > -nudgeJitterMs) return;
     const key = `${snapshot?.gameId}-${view.round}-${view.voteDeadlineAt}`;
     if (resolveAttempted.current === key) return;
     resolveAttempted.current = key;
@@ -282,6 +295,7 @@ export function ImposteriClient({
     snapshot?.gameId,
     now,
     deadlineMs,
+    nudgeJitterMs,
     sendIntentSilent,
   ]);
 

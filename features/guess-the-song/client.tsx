@@ -15,7 +15,11 @@ import {
 } from "@/components/room-game-ui";
 import { CheckIcon, EnterIcon, NoteIcon, ReplayIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
-import { subscribeToRoom } from "@/lib/realtime/channels";
+import {
+  randomNudgeJitterMs,
+  shouldRefetchGameEvent,
+  subscribeToRoom,
+} from "@/lib/realtime/channels";
 import {
   CLIP_LENGTH_OPTIONS,
   COUNTDOWN_SECONDS,
@@ -107,6 +111,11 @@ export function GuessTheSongClient({
   const router = useRouter();
   const { localizeError, t } = usePreferences();
   const [snapshot, setSnapshot] = useState<SongSnapshot | null>(null);
+  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
+  const latestUpdatedAt = useRef<string | null>(null);
+  useEffect(() => {
+    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
+  }, [snapshot]);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -115,6 +124,7 @@ export function GuessTheSongClient({
   const [selectedPreset, setSelectedPreset] = useState<string | null>(SONG_SOURCE_PRESETS[0].id);
   const [customQuery, setCustomQuery] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const [nudgeJitterMs] = useState(randomNudgeJitterMs);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   // Volume is a plain preference and *is* safe to persist — unlike the autoplay
   // unlock, it carries no per-element browser state.
@@ -265,8 +275,9 @@ export function GuessTheSongClient({
         return;
       }
       if (event.type === "game-event") {
-        const payload = event.payload as { gameId?: unknown };
-        if (payload.gameId === GAME_ID) void loadState();
+        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
+          void loadState();
+        }
       }
       if (event.type === "lobby-update") void loadState();
     });
@@ -300,29 +311,29 @@ export function GuessTheSongClient({
   // Past the deadline, any client may ask the server to close the round.
   useEffect(() => {
     if (!view || view.phase !== "playing" || view.roundDeadlineAt === null) return;
-    if (remainingMs === null || remainingMs > 0) return;
+    if (now < view.roundDeadlineAt + nudgeJitterMs) return;
     if (endRoundAttempted.current === view.roundDeadlineAt) return;
     endRoundAttempted.current = view.roundDeadlineAt;
     void sendIntent({ kind: "end-round" });
-  }, [remainingMs, sendIntent, view]);
+  }, [nudgeJitterMs, now, sendIntent, view]);
 
   // Once the shared countdown timestamp passes, flip the room into "playing".
   useEffect(() => {
     if (!view || view.phase !== "countdown" || view.playbackStartAt === null) return;
-    if (countdownRemainingMs === null || countdownRemainingMs > 0) return;
+    if (now < view.playbackStartAt + nudgeJitterMs) return;
     if (countdownAttempted.current === view.playbackStartAt) return;
     countdownAttempted.current = view.playbackStartAt;
     void sendIntent({ kind: "resolve-countdown" });
-  }, [countdownRemainingMs, sendIntent, view]);
+  }, [nudgeJitterMs, now, sendIntent, view]);
 
   // After the round-end pause, the game advances itself — no host tap needed.
   useEffect(() => {
     if (!view || view.phase !== "round-end" || view.roundEndAdvanceAt === null) return;
-    if (now < view.roundEndAdvanceAt) return;
+    if (now < view.roundEndAdvanceAt + nudgeJitterMs) return;
     if (nextRoundAttempted.current === view.roundEndAdvanceAt) return;
     nextRoundAttempted.current = view.roundEndAdvanceAt;
     void sendIntent({ kind: "next-round" });
-  }, [now, sendIntent, view]);
+  }, [nudgeJitterMs, now, sendIntent, view]);
 
   // Load the clip during the countdown, then fire playback exactly at
   // playbackStartAt so every unlocked device starts the same instant.
