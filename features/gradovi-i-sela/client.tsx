@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
 import { RoomBody, RoomBottomBar, RoomContent } from "@/components/room-shell";
 import {
@@ -12,8 +11,7 @@ import {
   WaitingNote,
 } from "@/components/room-game-ui";
 import { CheckIcon } from "@/components/room-icons";
-import { createClient } from "@/lib/supabase/client";
-import { shouldRefetchGameEvent, subscribeToRoom } from "@/lib/realtime/channels";
+import { useGameRoom } from "@/lib/rooms/use-game-room";
 import {
   DEFAULT_GRADOVI_SETTINGS,
   DEFAULT_GRADOVI_CATEGORIES,
@@ -67,24 +65,15 @@ function totalRoundPoints(view: GradoviView, targetPlayerId: string): number {
   );
 }
 
-async function readError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "Something went wrong.";
-  } catch {
-    return "Something went wrong.";
-  }
-}
-
 export function GradoviClient({ roomCode, playerId }: { roomCode: string; playerId: string }) {
-  const router = useRouter();
   const { localizeError, t } = usePreferences();
-  const [snapshot, setSnapshot] = useState<GradoviSnapshot | null>(null);
-  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
-  const latestUpdatedAt = useRef<string | null>(null);
-  useEffect(() => {
-    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
-  }, [snapshot]);
+  const { snapshot, error, setError, isSending, sendIntent: sendRoomIntent, finishSession, request } = useGameRoom<
+    GradoviSnapshot,
+    GradoviIntent
+  >({
+    roomCode,
+    gameId: GAME_ID,
+  });
   const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
   const [draftSettings, setDraftSettings] = useState<GradoviSettings>({
     ...DEFAULT_GRADOVI_SETTINGS,
@@ -92,15 +81,12 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
   const [draftCategories, setDraftCategories] = useState<string[]>([
     ...DEFAULT_GRADOVI_CATEGORIES,
   ]);
-  const [error, setError] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
   const [isCheckingAi, setIsCheckingAi] = useState(false);
   const [screenNotice, setScreenNotice] = useState<ScreenNotice | null>(null);
   const [timeUpNotice, setTimeUpNotice] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const requestQueue = useRef<Promise<GradoviSnapshot | null>>(Promise.resolve(null));
-  const pendingRequests = useRef(0);
   const syncedRound = useRef<number | null>(null);
   const syncedSettings = useRef<string | null>(null);
   const syncedCategories = useRef<string | null>(null);
@@ -122,43 +108,12 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
     }, 1850);
   }, []);
 
-  const loadState = useCallback(async () => {
-    const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/state`, {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      setError(localizeError(await readError(response)));
-      return;
-    }
-    const data = (await response.json()) as GradoviSnapshot;
-    setSnapshot(data);
-    setError(null);
-  }, [localizeError, roomCode]);
-
   const sendIntent = useCallback(
     async (intent: GradoviIntent) => {
-      pendingRequests.current += 1;
-      setIsSending(true);
-      try {
-        const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/intent`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameId: GAME_ID, intent }),
-        });
-        if (!response.ok) {
-          setError(localizeError(await readError(response)));
-          return null;
-        }
-        const data = (await response.json()) as GradoviSnapshot;
-        setSnapshot(data);
-        setError(null);
-        return data;
-      } finally {
-        pendingRequests.current -= 1;
-        if (pendingRequests.current === 0) setIsSending(false);
-      }
+      const result = await sendRoomIntent(intent);
+      return result.ok ? result.snapshot : null;
     },
-    [localizeError, roomCode],
+    [sendRoomIntent],
   );
 
   const postIntent = useCallback(
@@ -185,35 +140,6 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
       });
     }
   }, [draftAnswers, postIntent, snapshot?.view]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadState();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadState]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = subscribeToRoom(supabase, roomCode, (event) => {
-      if (event.type === "state") {
-        const payload = event.payload as { status?: unknown; target?: unknown };
-        if (payload.status === "finished") {
-          router.replace(typeof payload.target === "string" ? payload.target : "/");
-        }
-        return;
-      }
-      if (event.type === "game-event") {
-        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
-          void loadState();
-        }
-      }
-      if (event.type === "lobby-update") void loadState();
-    });
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [loadState, roomCode, router]);
 
   useEffect(() => {
     return () => {
@@ -468,34 +394,10 @@ export function GradoviClient({ roomCode, playerId }: { roomCode: string; player
   async function runAiValidation() {
     setIsCheckingAi(true);
     try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/gradovi-ai`, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        setError(localizeError(await readError(response)));
-        return;
-      }
-      const data = (await response.json()) as GradoviSnapshot;
-      setSnapshot(data);
-      setError(data.warning ? localizeError(data.warning) : null);
+      const result = await request("gradovi-ai", undefined, { trackSending: false });
+      if (result.ok && result.snapshot.warning) setError(localizeError(result.snapshot.warning));
     } finally {
       setIsCheckingAi(false);
-    }
-  }
-
-  async function finishSession() {
-    setIsSending(true);
-    try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/finish`, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        setError(localizeError(await readError(response)));
-        return;
-      }
-      router.replace("/");
-    } finally {
-      setIsSending(false);
     }
   }
 

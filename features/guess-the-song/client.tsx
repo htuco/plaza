@@ -3,7 +3,6 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
 import { RoomBody, RoomBottomBar, RoomContent } from "@/components/room-shell";
 import {
@@ -14,12 +13,8 @@ import {
   WaitingNote,
 } from "@/components/room-game-ui";
 import { CheckIcon, EnterIcon, NoteIcon, ReplayIcon } from "@/components/room-icons";
-import { createClient } from "@/lib/supabase/client";
-import {
-  randomNudgeJitterMs,
-  shouldRefetchGameEvent,
-  subscribeToRoom,
-} from "@/lib/realtime/channels";
+import { useGameRoom } from "@/lib/rooms/use-game-room";
+import { randomNudgeJitterMs } from "@/lib/realtime/channels";
 import {
   CLIP_LENGTH_OPTIONS,
   COUNTDOWN_SECONDS,
@@ -92,15 +87,6 @@ function formatClock(seconds: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-async function readError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "Something went wrong.";
-  } catch {
-    return "Something went wrong.";
-  }
-}
-
 export function GuessTheSongClient({
   roomCode,
   playerId,
@@ -108,16 +94,14 @@ export function GuessTheSongClient({
   roomCode: string;
   playerId: string;
 }) {
-  const router = useRouter();
   const { localizeError, t } = usePreferences();
-  const [snapshot, setSnapshot] = useState<SongSnapshot | null>(null);
-  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
-  const latestUpdatedAt = useRef<string | null>(null);
-  useEffect(() => {
-    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
-  }, [snapshot]);
-  const [error, setError] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
+  const { snapshot, error, setError, isSending, sendIntent: sendRoomIntent, finishSession, request } = useGameRoom<
+    SongSnapshot,
+    GuessTheSongIntent
+  >({
+    roomCode,
+    gameId: GAME_ID,
+  });
   const [isStarting, setIsStarting] = useState(false);
   const [guessValue, setGuessValue] = useState("");
   const [guessFlash, setGuessFlash] = useState<"hit" | "miss" | null>(null);
@@ -169,36 +153,10 @@ export function GuessTheSongClient({
     }
   }, [volume]);
 
-  const loadState = useCallback(async () => {
-    const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/state`, {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      setError(localizeError(await readError(response)));
-      return;
-    }
-    setSnapshot((await response.json()) as SongSnapshot);
-    setError(null);
-  }, [localizeError, roomCode]);
-
+  // Failures come back to the caller, which shows "Wrong guess." its own way.
   const sendIntent = useCallback(
-    async (intent: GuessTheSongIntent): Promise<{ ok: boolean; message?: string }> => {
-      setIsSending(true);
-      try {
-        const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/intent`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameId: GAME_ID, intent }),
-        });
-        if (!response.ok) return { ok: false, message: await readError(response) };
-        setSnapshot((await response.json()) as SongSnapshot);
-        setError(null);
-        return { ok: true };
-      } finally {
-        setIsSending(false);
-      }
-    },
-    [roomCode],
+    (intent: GuessTheSongIntent) => sendRoomIntent(intent, { showError: false }),
+    [sendRoomIntent],
   );
 
   async function actionIntent(intent: GuessTheSongIntent) {
@@ -210,18 +168,11 @@ export function GuessTheSongClient({
     setIsStarting(true);
     setError(null);
     try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/songs/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          selectedPreset ? { presetId: selectedPreset } : { customQuery: customQuery.trim() },
-        ),
-      });
-      if (!response.ok) {
-        setError(localizeError(await readError(response)));
-        return;
-      }
-      setSnapshot((await response.json()) as SongSnapshot);
+      await request(
+        "songs/start",
+        selectedPreset ? { presetId: selectedPreset } : { customQuery: customQuery.trim() },
+        { trackSending: false },
+      );
     } finally {
       setIsStarting(false);
     }
@@ -242,49 +193,6 @@ export function GuessTheSongClient({
     }
     window.setTimeout(() => setGuessFlash(null), 1200);
   }
-
-  async function finishSession() {
-    setIsSending(true);
-    try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/finish`, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        setError(localizeError(await readError(response)));
-        return;
-      }
-      router.replace("/");
-    } finally {
-      setIsSending(false);
-    }
-  }
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadState(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadState]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = subscribeToRoom(supabase, roomCode, (event) => {
-      if (event.type === "state") {
-        const payload = event.payload as { status?: unknown; target?: unknown };
-        if (payload.status === "finished") {
-          router.replace(typeof payload.target === "string" ? payload.target : "/");
-        }
-        return;
-      }
-      if (event.type === "game-event") {
-        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
-          void loadState();
-        }
-      }
-      if (event.type === "lobby-update") void loadState();
-    });
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [loadState, roomCode, router]);
 
   const view = snapshot?.view ?? null;
 

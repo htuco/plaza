@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePreferences } from "@/components/preferences-provider";
 import { RoomBody, RoomBottomBar, RoomContent, RoomSplit } from "@/components/room-shell";
 import {
@@ -12,12 +11,8 @@ import {
   WaitingNote,
 } from "@/components/room-game-ui";
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, CloseIcon } from "@/components/room-icons";
-import { createClient } from "@/lib/supabase/client";
-import {
-  randomNudgeJitterMs,
-  shouldRefetchGameEvent,
-  subscribeToRoom,
-} from "@/lib/realtime/channels";
+import { useGameRoom } from "@/lib/rooms/use-game-room";
+import { randomNudgeJitterMs } from "@/lib/realtime/channels";
 import { Hearts, ItemCard, OptionGroup } from "./components";
 import {
   LIVES_OPTIONS,
@@ -57,108 +52,18 @@ type HigherLowerSnapshot = {
   updatedAt: string;
 };
 
-async function readError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "Something went wrong.";
-  } catch {
-    return "Something went wrong.";
-  }
-}
-
 export function HigherLowerClient({ roomCode, playerId }: { roomCode: string; playerId: string }) {
-  const router = useRouter();
-  const { localizeError, t } = usePreferences();
-  const [snapshot, setSnapshot] = useState<HigherLowerSnapshot | null>(null);
-  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
-  const latestUpdatedAt = useRef<string | null>(null);
-  useEffect(() => {
-    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
-  }, [snapshot]);
-  const [error, setError] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
+  const { t } = usePreferences();
+  const { snapshot, error, isSending, sendIntent, finishSession } = useGameRoom<
+    HigherLowerSnapshot,
+    HigherLowerIntent
+  >({
+    roomCode,
+    gameId: GAME_ID,
+  });
   const [now, setNow] = useState(() => Date.now());
   const [nudgeJitterMs] = useState(randomNudgeJitterMs);
   const autoAdvanceKey = useRef<string | null>(null);
-
-  const loadState = useCallback(async () => {
-    const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/state`, {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      setError(localizeError(await readError(response)));
-      return;
-    }
-    setSnapshot((await response.json()) as HigherLowerSnapshot);
-    setError(null);
-  }, [localizeError, roomCode]);
-
-  // `silent` intents are deadline nudges any client may fire; losing the race
-  // to another client is expected, so their errors are not shown.
-  const sendIntent = useCallback(
-    async (intent: HigherLowerIntent, { silent = false } = {}) => {
-      if (!silent) setIsSending(true);
-      try {
-        const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/intent`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameId: GAME_ID, intent }),
-        });
-        if (!response.ok) {
-          if (!silent) setError(localizeError(await readError(response)));
-          return;
-        }
-        setSnapshot((await response.json()) as HigherLowerSnapshot);
-        setError(null);
-      } finally {
-        if (!silent) setIsSending(false);
-      }
-    },
-    [localizeError, roomCode],
-  );
-
-  async function finishSession() {
-    setIsSending(true);
-    try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/finish`, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        setError(localizeError(await readError(response)));
-        return;
-      }
-      router.replace("/");
-    } finally {
-      setIsSending(false);
-    }
-  }
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadState(), 0);
-    return () => window.clearTimeout(timer);
-  }, [loadState]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = subscribeToRoom(supabase, roomCode, (event) => {
-      if (event.type === "state") {
-        const payload = event.payload as { status?: unknown; target?: unknown };
-        if (payload.status === "finished") {
-          router.replace(typeof payload.target === "string" ? payload.target : "/");
-        }
-        return;
-      }
-      if (event.type === "game-event") {
-        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
-          void loadState();
-        }
-      }
-      if (event.type === "lobby-update") void loadState();
-    });
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [loadState, roomCode, router]);
 
   const view = snapshot?.view ?? null;
   const phase = view?.phase;
@@ -179,7 +84,7 @@ export function HigherLowerClient({ roomCode, playerId }: { roomCode: string; pl
     const key = `${view.phase}-${view.round}`;
     if (autoAdvanceKey.current === key) return;
     autoAdvanceKey.current = key;
-    void sendIntent({ kind: "advance" }, { silent: true });
+    void sendIntent({ kind: "advance" }, { showError: false, trackSending: false });
   }, [nudgeJitterMs, now, sendIntent, view]);
 
   if (!snapshot || !view) {

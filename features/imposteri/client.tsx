@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
 import { RoomBody, RoomBottomBar, RoomContent } from "@/components/room-shell";
 import {
@@ -12,12 +11,8 @@ import {
   WaitingNote,
 } from "@/components/room-game-ui";
 import { StarIcon } from "@/components/room-icons";
-import { createClient } from "@/lib/supabase/client";
-import {
-  randomNudgeJitterMs,
-  shouldRefetchGameEvent,
-  subscribeToRoom,
-} from "@/lib/realtime/channels";
+import { useGameRoom } from "@/lib/rooms/use-game-room";
+import { randomNudgeJitterMs } from "@/lib/realtime/channels";
 import type { ImposteriIntent, ImposteriView } from "./types";
 
 const GAME_ID = "imposteri";
@@ -44,15 +39,6 @@ type TransitionOverlay = {
   note: string;
 };
 
-async function readError(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "Something went wrong.";
-  } catch {
-    return "Something went wrong.";
-  }
-}
-
 function voteTotal(voteCounts: Record<string, number>): number {
   return Object.values(voteCounts).reduce((total, count) => total + count, 0);
 }
@@ -67,16 +53,7 @@ export function ImposteriClient({
   roomCode: string;
   playerId: string;
 }) {
-  const router = useRouter();
-  const { localizeError, t } = usePreferences();
-  const [snapshot, setSnapshot] = useState<ImposteriSnapshot | null>(null);
-  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
-  const latestUpdatedAt = useRef<string | null>(null);
-  useEffect(() => {
-    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
-  }, [snapshot]);
-  const [error, setError] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
+  const { t } = usePreferences();
   const [overlay, setOverlay] = useState<TransitionOverlay | null>(null);
   // Role card rests face-down each round; the player flips it themselves.
   // `revealedRound` records which round the flip applies to, so a new round
@@ -96,7 +73,8 @@ export function ImposteriClient({
     }, durationMs);
   }, []);
 
-  const applySnapshot = useCallback(
+  // Transition overlays fire as each new snapshot lands.
+  const handleSnapshot = useCallback(
     (data: ImposteriSnapshot) => {
       const phaseKey = `${data.gameId}-${data.view.round}-${data.view.phase}`;
       const previousPhaseKey = lastPhaseKey.current;
@@ -152,108 +130,18 @@ export function ImposteriClient({
       } else if (data.view.phase !== "result") {
         lastResultKey.current = null;
       }
-
-      setSnapshot(data);
-      setError(null);
     },
     [fireOverlay, t],
   );
 
-  const loadState = useCallback(async () => {
-    const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/state`, {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      setError(localizeError(await readError(response)));
-      return;
-    }
-    const data = (await response.json()) as ImposteriSnapshot;
-    applySnapshot(data);
-  }, [applySnapshot, localizeError, roomCode]);
-
-  const sendIntent = useCallback(
-    async (intent: ImposteriIntent) => {
-      setIsSending(true);
-      try {
-        const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/intent`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameId: GAME_ID, intent }),
-        });
-        if (!response.ok) {
-          setError(localizeError(await readError(response)));
-          return;
-        }
-        const data = (await response.json()) as ImposteriSnapshot;
-        applySnapshot(data);
-      } finally {
-        setIsSending(false);
-      }
-    },
-    [applySnapshot, localizeError, roomCode],
-  );
-
-  // Silent variant: ignore "still open" errors when racing the deadline.
-  const sendIntentSilent = useCallback(
-    async (intent: ImposteriIntent) => {
-      try {
-        const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/intent`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameId: GAME_ID, intent }),
-        });
-        // Apply the winner's state directly instead of waiting for broadcast + refetch.
-        if (response.ok) applySnapshot((await response.json()) as ImposteriSnapshot);
-      } catch {
-        // ignored
-      }
-    },
-    [applySnapshot, roomCode],
-  );
-
-  async function finishSession() {
-    setIsSending(true);
-    try {
-      const response = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/finish`, {
-        method: "POST",
-      });
-      if (!response.ok) {
-        setError(localizeError(await readError(response)));
-        return;
-      }
-      router.replace("/");
-    } finally {
-      setIsSending(false);
-    }
-  }
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadState();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadState]);
-
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = subscribeToRoom(supabase, roomCode, (event) => {
-      if (event.type === "state") {
-        const payload = event.payload as { status?: unknown; target?: unknown };
-        if (payload.status === "finished") {
-          router.replace(typeof payload.target === "string" ? payload.target : "/");
-        }
-        return;
-      }
-      if (event.type === "game-event") {
-        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
-          void loadState();
-        }
-      }
-    });
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [loadState, roomCode, router]);
+  const { snapshot, error, isSending, sendIntent, finishSession } = useGameRoom<
+    ImposteriSnapshot,
+    ImposteriIntent
+  >({
+    roomCode,
+    gameId: GAME_ID,
+    onSnapshot: handleSnapshot,
+  });
 
   const view = snapshot?.view ?? null;
 
@@ -287,7 +175,7 @@ export function ImposteriClient({
     const key = `${snapshot?.gameId}-${view.round}-${view.voteDeadlineAt}`;
     if (resolveAttempted.current === key) return;
     resolveAttempted.current = key;
-    void sendIntentSilent({ kind: "resolve-vote" });
+    void sendIntent({ kind: "resolve-vote" }, { showError: false, trackSending: false });
   }, [
     view?.phase,
     view?.voteDeadlineAt,
@@ -296,7 +184,7 @@ export function ImposteriClient({
     now,
     deadlineMs,
     nudgeJitterMs,
-    sendIntentSilent,
+    sendIntent,
   ]);
 
   const playersById = useMemo(() => {
