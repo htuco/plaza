@@ -3,24 +3,20 @@ import { eq } from "drizzle-orm";
 import { getGameModule } from "@/features";
 import { db, schema } from "@/lib/db/client";
 import { getRoomByCode } from "@/lib/rooms/server";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/supabase/server";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ room: string }> },
 ) {
   const { room: code } = await params;
-  const room = await getRoomByCode(code);
+  const [room, userId] = await Promise.all([getRoomByCode(code), getCurrentUserId()]);
   if (!room) return NextResponse.json({ error: "Room not found." }, { status: 404 });
   if (room.status !== "in_game" || !room.gameId) {
     return NextResponse.json({ error: "Room is not in a game." }, { status: 409 });
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const me = room.players.find((p) => p.anonId === user?.id);
+  const me = room.players.find((p) => p.anonId === userId);
   if (!me) return NextResponse.json({ error: "Player not in room." }, { status: 403 });
 
   const gameState = await db.query.gameStates.findFirst({

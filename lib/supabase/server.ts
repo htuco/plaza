@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
@@ -34,3 +35,12 @@ export async function createServiceClient() {
     { auth: { persistSession: false } },
   );
 }
+
+// Current anon user id for this request. getClaims() verifies the JWT locally
+// (no Auth round-trip when the project uses asymmetric signing keys), and
+// cache() dedupes it across everything rendered for one request.
+export const getCurrentUserId = cache(async (): Promise<string | null> => {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  return data?.claims.sub ?? null;
+});

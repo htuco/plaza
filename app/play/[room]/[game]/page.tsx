@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { GameRoomHeader } from "@/components/game-room-header";
 import { RoomScreen } from "@/components/room-shell";
 import { getRoomByCode } from "@/lib/rooms/server";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/supabase/server";
 import { GAMES } from "@/features/registry";
 import { getGameModule } from "@/features";
 import type { GameId } from "@/lib/db/schema";
@@ -22,13 +22,9 @@ export default async function GamePage({
   if (!GAMES.some((g) => g.id === game)) notFound();
   const gameId = game as GameId;
 
-  const room = await getRoomByCode(code);
+  const [room, userId] = await Promise.all([getRoomByCode(code), getCurrentUserId()]);
   if (!room) notFound();
-  if (room.status === "finished") redirect("/");
-
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const me = room.players.find((p) => p.anonId === user?.id);
+  if (room.status === "finished") redirect("/");  const me = room.players.find((p) => p.anonId === userId);
   if (!me) notFound();
 
   const gameModule = getGameModule(gameId);

@@ -19,8 +19,8 @@ function sanitizeNickname(input: FormDataEntryValue | null): string | null {
 
 async function getAnonUserId(): Promise<string> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) return user.id;
+  const { data: claims } = await supabase.auth.getClaims();
+  if (claims?.claims.sub) return claims.claims.sub;
   // Middleware should have signed us in already; fall back just in case.
   const { data, error } = await supabase.auth.signInAnonymously();
   if (error || !data.user) throw new Error("anonymous_auth_failed");

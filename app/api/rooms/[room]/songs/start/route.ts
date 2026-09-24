@@ -8,7 +8,7 @@ import { collectTracksForTerms } from "@/lib/music/itunes";
 import { db, schema } from "@/lib/db/client";
 import { broadcast } from "@/lib/realtime/server";
 import { getRoomByCode } from "@/lib/rooms/server";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/supabase/server";
 
 const MAX_CUSTOM_QUERY_LENGTH = 60;
 
@@ -32,17 +32,13 @@ export async function POST(
   }
 
   const { room: code } = await params;
-  const room = await getRoomByCode(code);
+  const [room, userId] = await Promise.all([getRoomByCode(code), getCurrentUserId()]);
   if (!room) return NextResponse.json({ error: "Room not found." }, { status: 404 });
   if (room.status !== "in_game" || room.gameId !== "guess-the-song") {
     return NextResponse.json({ error: "Room is not in Guess the Song." }, { status: 409 });
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const me = room.players.find((p) => p.anonId === user?.id);
+  const me = room.players.find((p) => p.anonId === userId);
   if (!me) return NextResponse.json({ error: "Player not in room." }, { status: 403 });
 
   // Resolve the song source before touching state.
