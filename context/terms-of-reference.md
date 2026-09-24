@@ -121,3 +121,4 @@ Record each resolved decision with date + short rationale. Newest on top.
 | 2026-05-23 | Auth: **guest-only** (Supabase anonymous auth) | zero signup friction for a friend group |
 | 2026-05-23 | Guess the Song audio: **iTunes preview** + Spotify metadata | Spotify `preview_url` deprecated / null for new apps |
 | 2026-05-23 | Working model: **vibe coded** — Claude builds, human does QA | Claude makes decisive calls, logs them here, flags real problems |
+| 2026-09-24 | Realtime `game-event` stays a **ping** (no state in payload); clients skip refetch when already fresh, deadline nudges use 0–400ms random jitter | the room channel is shared, so per-player redacted views must not ride on it; jitter collapses N simultaneous nudges into ~1 |

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePreferences } from "@/components/preferences-provider";
 import { RoomBody, RoomBottomBar, RoomContent, RoomSplit } from "@/components/room-shell";
@@ -12,7 +12,7 @@ import {
   WaitingNote,
 } from "@/components/room-game-ui";
 import { createClient } from "@/lib/supabase/client";
-import { subscribeToRoom } from "@/lib/realtime/channels";
+import { shouldRefetchGameEvent, subscribeToRoom } from "@/lib/realtime/channels";
 import { COLUMN_LABELS, FINAL_BASE_POINTS, FINAL_COLUMN_BONUS } from "./types";
 import type { AsocijacijeIntent, AsocijacijeView } from "./types";
 
@@ -51,6 +51,11 @@ export function AsocijacijeClient({
   const router = useRouter();
   const { localizeError, t } = usePreferences();
   const [snapshot, setSnapshot] = useState<AsocijacijeSnapshot | null>(null);
+  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
+  const latestUpdatedAt = useRef<string | null>(null);
+  useEffect(() => {
+    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
+  }, [snapshot]);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   // Which guess target just failed, for a quick shake/flash: "col-0".."col-3" | "final"
@@ -144,8 +149,9 @@ export function AsocijacijeClient({
         return;
       }
       if (event.type === "game-event") {
-        const payload = event.payload as { gameId?: unknown };
-        if (payload.gameId === GAME_ID) void loadState();
+        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
+          void loadState();
+        }
       }
       if (event.type === "lobby-update") void loadState();
     });

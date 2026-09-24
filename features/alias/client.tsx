@@ -12,7 +12,11 @@ import {
 } from "@/components/room-game-ui";
 import { CheckIcon, SkipIcon } from "@/components/room-icons";
 import { createClient } from "@/lib/supabase/client";
-import { subscribeToRoom } from "@/lib/realtime/channels";
+import {
+  randomNudgeJitterMs,
+  shouldRefetchGameEvent,
+  subscribeToRoom,
+} from "@/lib/realtime/channels";
 import {
   MAX_ALIAS_ROUNDS,
   MAX_ALIAS_TEAMS,
@@ -62,9 +66,15 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
   const router = useRouter();
   const { localizeError, t } = usePreferences();
   const [snapshot, setSnapshot] = useState<AliasSnapshot | null>(null);
+  // Freshest server state we hold, so realtime pings we already have can skip a refetch.
+  const latestUpdatedAt = useRef<string | null>(null);
+  useEffect(() => {
+    latestUpdatedAt.current = snapshot?.updatedAt ?? null;
+  }, [snapshot]);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [nudgeJitterMs] = useState(randomNudgeJitterMs);
   const endTurnAttempted = useRef<number | null>(null);
 
   const loadState = useCallback(async () => {
@@ -133,8 +143,9 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
         return;
       }
       if (event.type === "game-event") {
-        const payload = event.payload as { gameId?: unknown };
-        if (payload.gameId === GAME_ID) void loadState();
+        if (shouldRefetchGameEvent(event.payload, GAME_ID, latestUpdatedAt.current)) {
+          void loadState();
+        }
       }
       if (event.type === "lobby-update") void loadState();
     });
@@ -162,8 +173,7 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
       !view ||
       view.phase !== "explaining" ||
       view.turnDeadlineAt === null ||
-      remainingMs === null ||
-      remainingMs > 0
+      now < view.turnDeadlineAt + nudgeJitterMs
     ) {
       return;
     }
@@ -171,7 +181,7 @@ export function AliasClient({ roomCode, playerId }: { roomCode: string; playerId
     if (endTurnAttempted.current === view.turnDeadlineAt) return;
     endTurnAttempted.current = view.turnDeadlineAt;
     void sendIntent({ kind: "end-turn" });
-  }, [remainingMs, sendIntent, view]);
+  }, [nudgeJitterMs, now, sendIntent, view]);
 
   const playersById = useMemo(
     () => new Map(snapshot?.players.map((player) => [player.id, player]) ?? []),
